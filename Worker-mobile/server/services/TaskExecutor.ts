@@ -1,5 +1,6 @@
 import LDPlayerController from '../core/LDPlayerController.js';
 import TwitterMobileAutomation from '../automation/TwitterMobileAutomation.js';
+import TwitterAppManager from './TwitterAppManager.js';
 import ProfileManager, { MobileProfile } from './ProfileManager.js';
 import { logger } from '../utils/logger.js';
 import axios from 'axios';
@@ -31,6 +32,7 @@ export interface TaskExecutorConfig {
 export class TaskExecutor {
   private controller: LDPlayerController;
   private profileManager: ProfileManager;
+  private twitterAppManager: TwitterAppManager;
   private tasks: Map<string, Task> = new Map();
   private runningTasks: Map<string, Promise<void>> = new Map();
   private config: TaskExecutorConfig;
@@ -44,6 +46,7 @@ export class TaskExecutor {
   ) {
     this.controller = controller;
     this.profileManager = profileManager;
+    this.twitterAppManager = new TwitterAppManager(controller);
     this.config = {
       maxConcurrentTasks: 3,
       taskCheckInterval: 30000, // 30 seconds
@@ -80,6 +83,9 @@ export class TaskExecutor {
 
     // Wait for running tasks to complete
     await Promise.all(this.runningTasks.values());
+
+    // Shutdown Twitter app manager
+    await this.twitterAppManager.shutdown();
 
     logger.info('Task executor stopped');
   }
@@ -216,187 +222,53 @@ export class TaskExecutor {
     }
   }
 
-  // Twitter task implementations
+  // Twitter task implementations (using TwitterAppManager for speed)
   private async executeTwitterLike(profile: MobileProfile, data: any): Promise<any> {
-    const twitter = new TwitterMobileAutomation(
-      this.controller,
-      profile.instanceName,
-      profile.port
-    );
+    // ⚡ Use TwitterAppManager - app already running, super fast!
+    return await this.twitterAppManager.executeWithSession(profile, async (twitter) => {
+      // Search for tweet or navigate to URL
+      if (data.tweetUrl) {
+        logger.warn('Direct tweet URL navigation not implemented yet');
+      } else if (data.searchQuery) {
+        await twitter.search(data.searchQuery);
+      }
 
-    await twitter.launchTwitter();
-
-    // Login if needed
-    if (!profile.apps.twitter?.loggedIn) {
-      await twitter.login({
-        username: data.username || profile.apps.twitter?.username || '',
-        password: data.password || ''
-      });
-
-      // Update profile
-      await this.profileManager.updateProfile(profile.id, {
-        apps: {
-          ...profile.apps,
-          twitter: {
-            installed: true,
-            ...profile.apps.twitter,
-            loggedIn: true
-          }
-        }
-      });
-    }
-
-    // Search for tweet or navigate to URL
-    if (data.tweetUrl) {
-      // Handle tweet URL
-      logger.warn('Direct tweet URL navigation not implemented yet');
-    } else if (data.searchQuery) {
-      await twitter.search(data.searchQuery);
-    }
-
-    // Like tweets
-    const likeCount = data.likeCount || 1;
-    return await twitter.likeRandomTweets(likeCount);
+      // Like tweets
+      const likeCount = data.likeCount || 1;
+      return await twitter.likeRandomTweets(likeCount);
+    });
   }
 
   private async executeTwitterFollow(profile: MobileProfile, data: any): Promise<any> {
-    const twitter = new TwitterMobileAutomation(
-      this.controller,
-      profile.instanceName,
-      profile.port
-    );
-
-    await twitter.launchTwitter();
-
-    // Login if needed
-    if (!profile.apps.twitter?.loggedIn) {
-      await twitter.login({
-        username: data.username || profile.apps.twitter?.username || '',
-        password: data.password || ''
-      });
-
-      await this.profileManager.updateProfile(profile.id, {
-        apps: {
-          ...profile.apps,
-          twitter: {
-            installed: true,
-            ...profile.apps.twitter,
-            loggedIn: true
-          }
-        }
-      });
-    }
-
-    // Follow user
-    return await twitter.followUser(data.targetUsername);
+    return await this.twitterAppManager.executeWithSession(profile, async (twitter) => {
+      return await twitter.followUser(data.targetUsername);
+    });
   }
 
   private async executeTwitterRetweet(profile: MobileProfile, data: any): Promise<any> {
-    const twitter = new TwitterMobileAutomation(
-      this.controller,
-      profile.instanceName,
-      profile.port
-    );
-
-    await twitter.launchTwitter();
-
-    // Login if needed
-    if (!profile.apps.twitter?.loggedIn) {
-      await twitter.login({
-        username: data.username || profile.apps.twitter?.username || '',
-        password: data.password || ''
-      });
-
-      await this.profileManager.updateProfile(profile.id, {
-        apps: {
-          ...profile.apps,
-          twitter: {
-            installed: true,
-            ...profile.apps.twitter,
-            loggedIn: true
-          }
-        }
-      });
-    }
-
-    // Search for tweet
-    if (data.searchQuery) {
-      await twitter.search(data.searchQuery);
-    }
-
-    // Retweet (simplified - assumes tweet is on screen)
-    return await twitter.retweet(400, data.comment || '');
+    return await this.twitterAppManager.executeWithSession(profile, async (twitter) => {
+      if (data.searchQuery) {
+        await twitter.search(data.searchQuery);
+      }
+      return await twitter.retweet(400, data.comment || '');
+    });
   }
 
   private async executeTwitterComment(profile: MobileProfile, data: any): Promise<any> {
-    const twitter = new TwitterMobileAutomation(
-      this.controller,
-      profile.instanceName,
-      profile.port
-    );
-
-    await twitter.launchTwitter();
-
-    // Login if needed
-    if (!profile.apps.twitter?.loggedIn) {
-      await twitter.login({
-        username: data.username || profile.apps.twitter?.username || '',
-        password: data.password || ''
-      });
-
-      await this.profileManager.updateProfile(profile.id, {
-        apps: {
-          ...profile.apps,
-          twitter: {
-            installed: true,
-            ...profile.apps.twitter,
-            loggedIn: true
-          }
-        }
-      });
-    }
-
-    // Search for tweet
-    if (data.searchQuery) {
-      await twitter.search(data.searchQuery);
-    }
-
-    // Comment on tweet
-    return await twitter.commentOnTweet(400, data.comment);
+    return await this.twitterAppManager.executeWithSession(profile, async (twitter) => {
+      if (data.searchQuery) {
+        await twitter.search(data.searchQuery);
+      }
+      return await twitter.commentOnTweet(400, data.comment);
+    });
   }
 
   private async executeTwitterPost(profile: MobileProfile, data: any): Promise<any> {
-    const twitter = new TwitterMobileAutomation(
-      this.controller,
-      profile.instanceName,
-      profile.port
-    );
-
-    await twitter.launchTwitter();
-
-    // Login if needed
-    if (!profile.apps.twitter?.loggedIn) {
-      await twitter.login({
-        username: data.username || profile.apps.twitter?.username || '',
-        password: data.password || ''
+    return await this.twitterAppManager.executeWithSession(profile, async (twitter) => {
+      return await twitter.postTweet(data.text, {
+        media: data.media,
+        poll: data.poll
       });
-
-      await this.profileManager.updateProfile(profile.id, {
-        apps: {
-          ...profile.apps,
-          twitter: {
-            installed: true,
-            ...profile.apps.twitter,
-            loggedIn: true
-          }
-        }
-      });
-    }
-
-    // Post tweet
-    return await twitter.postTweet(data.text, {
-      media: data.media,
-      poll: data.poll
     });
   }
 

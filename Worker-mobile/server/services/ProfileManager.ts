@@ -199,6 +199,12 @@ export class ProfileManager {
         );
       }
 
+      // Auto-install Twitter if not installed
+      if (!profile.apps.twitter?.installed) {
+        logger.info(`Installing Twitter on profile: ${profile.name}`);
+        await this.installTwitterApp(profileId);
+      }
+
       // Update profile status
       profile.status = 'active';
       profile.lastUsed = new Date();
@@ -311,13 +317,17 @@ export class ProfileManager {
     }
   }
 
-  // Clone profile
-  async cloneProfile(profileId: string, newName: string): Promise<MobileProfile> {
+  // Clone profile (including apps)
+  async cloneProfile(profileId: string, newName: string, options?: {
+    copyApps?: boolean;
+    launchAndSetup?: boolean;
+  }): Promise<MobileProfile> {
     const originalProfile = this.profiles.get(profileId);
     if (!originalProfile) {
       throw new Error(`Profile ${profileId} not found`);
     }
 
+    // Create new profile with same settings
     const clonedProfile = await this.createProfile({
       name: newName,
       settings: originalProfile.settings,
@@ -326,8 +336,52 @@ export class ProfileManager {
       location: originalProfile.location
     });
 
+    // Copy apps if requested
+    if (options?.copyApps && originalProfile.apps) {
+      logger.info(`Cloning apps from ${originalProfile.name} to ${newName}`);
+
+      // Use LDPlayer copy command to clone instance (faster than reinstalling apps)
+      try {
+        await this.controller.cloneInstance(originalProfile.instanceName, clonedProfile.instanceName);
+
+        // Update apps status
+        clonedProfile.apps = JSON.parse(JSON.stringify(originalProfile.apps));
+        await this.saveProfile(clonedProfile);
+
+        logger.info(`Apps cloned successfully`);
+      } catch (error) {
+        logger.warn('Failed to clone apps, will install manually on activation');
+      }
+    }
+
+    // Auto-launch and setup if requested
+    if (options?.launchAndSetup) {
+      await this.activateProfile(clonedProfile.id);
+    }
+
     logger.info(`Cloned profile ${originalProfile.name} to ${newName}`);
     return clonedProfile;
+  }
+
+  // Create base profile with Twitter pre-installed
+  async createBaseProfile(name: string = 'Base Profile'): Promise<MobileProfile> {
+    logger.info('Creating base profile with Twitter...');
+
+    const profile = await this.createProfile({
+      name,
+      settings: {
+        resolution: '720,1280',
+        dpi: 240,
+        cpu: 2,
+        memory: 2048
+      }
+    });
+
+    // Launch and install Twitter
+    await this.activateProfile(profile.id);
+
+    logger.info('Base profile created. You can clone this for new profiles.');
+    return profile;
   }
 
   // Import/Export profiles
@@ -364,6 +418,65 @@ export class ProfileManager {
 
     logger.info(`Imported profile: ${importedProfile.name}`);
     return importedProfile;
+  }
+
+  // Install Twitter app on profile
+  async installTwitterApp(profileId: string): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) {
+      throw new Error(`Profile ${profileId} not found`);
+    }
+
+    try {
+      // Twitter package name
+      const twitterPackage = 'com.twitter.android';
+
+      // Check if Twitter APK exists
+      const apkPath = process.env.TWITTER_APK_PATH || './apks/twitter.apk';
+
+      logger.info(`Installing Twitter APK from: ${apkPath}`);
+      await this.controller.installAPK(profile.port, apkPath);
+
+      // Update profile
+      profile.apps.twitter = {
+        installed: true,
+        loggedIn: false,
+        packageName: twitterPackage
+      } as any;
+
+      await this.saveProfile(profile);
+      logger.info(`Twitter installed on profile: ${profile.name}`);
+    } catch (error) {
+      logger.error(`Failed to install Twitter on profile ${profileId}:`, error);
+      // Don't throw - just log warning
+      logger.warn('Continue without Twitter. Download APK and set TWITTER_APK_PATH in .env');
+    }
+  }
+
+  // Install multiple apps at once
+  async installApps(profileId: string, apps: Array<{ name: string; apkPath: string; packageName: string }>): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) {
+      throw new Error(`Profile ${profileId} not found`);
+    }
+
+    for (const app of apps) {
+      try {
+        logger.info(`Installing ${app.name} on profile: ${profile.name}`);
+        await this.controller.installAPK(profile.port, app.apkPath);
+
+        profile.apps[app.name.toLowerCase()] = {
+          installed: true,
+          packageName: app.packageName
+        };
+
+        logger.info(`${app.name} installed successfully`);
+      } catch (error) {
+        logger.error(`Failed to install ${app.name}:`, error);
+      }
+    }
+
+    await this.saveProfile(profile);
   }
 
   // Helper method to generate unique profile ID

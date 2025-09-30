@@ -131,6 +131,29 @@ export class LDPlayerController {
     }
   }
 
+  async cloneInstance(sourceName: string, targetName: string): Promise<void> {
+    try {
+      await execAsync(`"${this.ldConsolePath}" copy --name "${targetName}" --from "${sourceName}"`);
+
+      // Register the cloned instance
+      const sourceInstance = this.instances.get(sourceName);
+      if (sourceInstance) {
+        const clonedInstance: LDPlayerInstance = {
+          name: targetName,
+          index: this.instances.size,
+          port: 5555 + this.instances.size * 2,
+          status: 'stopped'
+        };
+        this.instances.set(targetName, clonedInstance);
+      }
+
+      logger.info(`Cloned instance ${sourceName} to ${targetName}`);
+    } catch (error) {
+      logger.error(`Failed to clone instance from ${sourceName} to ${targetName}:`, error);
+      throw error;
+    }
+  }
+
   // ADB Operations
   async connectADB(port: number): Promise<void> {
     try {

@@ -1,0 +1,255 @@
+/* Mobile & LDPlayer Responsive Styles */
+
+/* Base mobile styles */
+@media (max-width: 768px) {
+  /* Make navigation mobile-friendly */
+  .sidebar {
+    width: 100% !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    top: auto !important;
+    height: 60px !important;
+    z-index: 1000 !important;
+    display: flex !important;
+    flex-direction: row !important;
+  }
+
+  /* Adjust main content for bottom nav */
+  main {
+    padding-bottom: 70px !important;
+    margin-left: 0 !important;
+  }
+
+  /* Make tables scrollable */
+  .table-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  table {
+    min-width: 100% !important;
+  }
+
+  /* Larger touch targets */
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    min-height: 44px !important;
+    padding: 12px !important;
+    font-size: 16px !important; /* Prevent zoom on iOS */
+  }
+
+  /* Stack form elements */
+  .form-group {
+    flex-direction: column !important;
+  }
+
+  /* Hide less important columns on mobile */
+  .hide-mobile {
+    display: none !important;
+  }
+
+  /* Modal adjustments */
+  .modal,
+  .dialog {
+    width: 100% !important;
+    margin: 0 !important;
+    max-height: 100vh !important;
+  }
+
+  /* Card layout */
+  .card-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Profile and Task cards mobile view */
+  .profile-card,
+  .task-card {
+    padding: 15px !important;
+    margin: 10px !important;
+  }
+
+  /* Tabs mobile scroll */
+  .tabs-list {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+  }
+
+  .tabs-list::-webkit-scrollbar {
+    display: none !important;
+  }
+}
+
+/* LDPlayer specific styles */
+.ldplayer-device {
+  /* Optimize for Android emulator */
+  * {
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-touch-callout: none !important;
+  }
+
+  /* Better touch scrolling */
+  .scrollable {
+    overflow-y: scroll !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* Larger click areas for emulator */
+  .clickable {
+    position: relative;
+  }
+
+  .clickable::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    right: -10px;
+    bottom: -10px;
+  }
+
+  /* Bottom navigation for LDPlayer */
+  .mobile-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--background);
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  .mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-decoration: none;
+    color: var(--foreground);
+    font-size: 12px;
+  }
+
+  .mobile-nav-item svg {
+    width: 24px;
+    height: 24px;
+    margin-bottom: 4px;
+  }
+
+  .mobile-nav-item.active {
+    color: var(--primary);
+  }
+}
+
+/* Portrait orientation */
+@media (orientation: portrait) and (max-width: 768px) {
+  .landscape-only {
+    display: none !important;
+  }
+
+  .portrait-message {
+    display: block !important;
+    text-align: center;
+    padding: 20px;
+  }
+}
+
+/* Landscape orientation */
+@media (orientation: landscape) and (max-width: 768px) {
+  .portrait-only {
+    display: none !important;
+  }
+
+  /* Reduce vertical spacing in landscape */
+  header {
+    height: 40px !important;
+  }
+
+  .mobile-nav {
+    height: 40px !important;
+  }
+
+  main {
+    padding-bottom: 50px !important;
+  }
+}
+
+/* Touch-friendly spacing */
+.mobile-device {
+  /* Increase tap targets */
+  a, button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Better spacing for fingers */
+  .list-item {
+    padding: 15px;
+    margin-bottom: 10px;
+  }
+
+  /* Swipeable elements */
+  .swipeable {
+    touch-action: pan-y;
+  }
+
+  /* Prevent text selection on touch */
+  .no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+}
+
+/* Responsive text */
+@media (max-width: 480px) {
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.25rem !important; }
+  h3 { font-size: 1.1rem !important; }
+  p, span, div { font-size: 0.9rem !important; }
+  small { font-size: 0.8rem !important; }
+}
+
+/* Floating action button for mobile */
+.fab {
+  position: fixed !important;
+  bottom: 70px !important;
+  right: 20px !important;
+  width: 56px !important;
+  height: 56px !important;
+  border-radius: 50% !important;
+  background: var(--primary) !important;
+  color: white !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+  z-index: 999 !important;
+}
+
+/* Loading states for slow connections */
+.mobile-device .loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+.mobile-device .skeleton {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
