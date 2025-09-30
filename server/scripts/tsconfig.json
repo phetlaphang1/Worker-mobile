@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "lib": ["ES2022", "DOM"],
+    "outDir": "./dist",
+    "rootDir": "./",
+    "baseUrl": "./",
+    "paths": {
+      "#act": ["./libs/act"],
+      "#twitterCaring": ["libs/actTwitter/twitterCaring"],
+      "#twitterAction": ["libs/actTwitter/twitterAction"],
+      "#twitterReading": ["libs/actTwitter/twitterReading"],
+      "#twitterInteracting": ["libs/actTwitter/twitterInteracting"],      
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

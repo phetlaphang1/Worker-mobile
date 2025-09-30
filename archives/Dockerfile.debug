@@ -1,0 +1,16 @@
+FROM node:20-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git python3 make g++
+RUN npm install -g vite
+
+WORKDIR /app
+COPY package*.json .
+RUN npm ci
+
+COPY . .
+
+ENV NODE_ENV=production
+RUN npm run build
+
+CMD ["sh", "-c", "ls -R /app/dist && find /app/dist -type f"]

@@ -1,0 +1,44 @@
+{
+  "name": "worker-mobile",
+  "version": "1.0.0",
+  "description": "Mobile automation worker for LDPlayer Android emulator",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "detect-ldplayer": "tsx src/utils/detectLDPlayer.ts",
+    "detect-ldplayer-update": "tsx src/utils/detectLDPlayer.ts --auto-update",
+    "detect-windows": "detect-ldplayer.bat"
+  },
+  "dependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@wdio/appium-service": "^8.27.0",
+    "@wdio/local-runner": "^8.27.0",
+    "adb-ts": "^2.0.0",
+    "appium": "^2.4.1",
+    "axios": "^1.6.5",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-schedule": "^2.1.1",
+    "proxy-chain": "^2.4.0",
+    "sharp": "^0.33.1",
+    "tesseract.js": "^5.0.4",
+    "uuid": "^9.0.1",
+    "webdriverio": "^8.27.0",
+    "winston": "^3.11.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
+    "@types/ws": "^8.5.10",
+    "nodemon": "^3.0.2",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
