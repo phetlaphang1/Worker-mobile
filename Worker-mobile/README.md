@@ -1,188 +1,210 @@
-# Worker Mobile - LDPlayer Automation System
+# Worker-Mobile: BoxPhone System on LDPlayer
 
-A mobile automation system designed to work with LDPlayer Android emulator, providing advanced automation capabilities for mobile applications.
+Hệ thống automation trên LDPlayer giống BoxPhone - chạy nhiều instances và execute scripts.
 
-## Features
+## 🚀 Quick Start
 
-- 🤖 **LDPlayer Control**: Full control over LDPlayer instances via ADB
-- 👤 **Multi-Profile Management**: Create and manage multiple device profiles
-- 📱 **Mobile App Automation**: Automate Twitter and other mobile apps
-- 🎯 **Task Execution**: Queue-based task system with retry logic
-- 🌐 **Proxy Support**: Configure proxies for each profile
-- 📍 **GPS Spoofing**: Set custom locations for each instance
-- 🔒 **Anti-Detection**: Human-like behavior simulation
-- 🔄 **Real-time Updates**: WebSocket support for live status updates
+### 1. Setup
 
-## Prerequisites
-
-- Windows OS (LDPlayer is Windows-only)
-- LDPlayer 9 installed
-- Node.js 18+
-- ADB tools (included with LDPlayer)
-
-## Installation
-
-1. Clone the repository
-2. Navigate to Worker-mobile directory:
 ```bash
-cd Worker-mobile
+# Install dependencies
 npm install
-```
 
-3. Configure environment variables in `.env`:
-```env
-LDPLAYER_PATH=C:\LDPlayer\LDPlayer9
-LDCONSOLE_PATH=C:\LDPlayer\LDPlayer9\ldconsole.exe
-ADB_PATH=C:\LDPlayer\LDPlayer9\adb.exe
+# Copy .env.example → .env
+cp .env.example .env
+
+# Edit .env
+LDCONSOLE_PATH=D:\LDPlayer\LDPlayer9\ldconsole.exe
+ADB_PATH=D:\LDPlayer\LDPlayer9\adb.exe
 PORT=5051
 ```
 
-## Usage
+### 2. Development Mode (Hot Reload)
 
-### Start the server:
 ```bash
 npm run dev
 ```
 
-### API Endpoints
+**2 servers sẽ chạy:**
+- 🔥 **Dev server (HMR):** http://localhost:5173 ← Dùng cái này để dev!
+- 📦 **API server:** http://localhost:5051
 
-#### Profiles
-- `GET /api/profiles` - Get all profiles
-- `POST /api/profiles` - Create new profile
-- `PUT /api/profiles/:id` - Update profile
-- `DELETE /api/profiles/:id` - Delete profile
-- `POST /api/profiles/:id/activate` - Activate profile
-- `POST /api/profiles/:id/deactivate` - Deactivate profile
+**Mở browser:** `http://localhost:5173`
 
-#### Tasks
-- `GET /api/tasks` - Get all tasks
-- `POST /api/tasks` - Add new task
-- `DELETE /api/tasks/:id` - Cancel task
+→ Edit code → Auto reload! ⚡
 
-#### Instances
-- `GET /api/instances` - Get all instances
-- `POST /api/instances/:name/launch` - Launch instance
-- `POST /api/instances/:name/stop` - Stop instance
-
-#### Device Control
-- `POST /api/device/:port/tap` - Perform tap
-- `POST /api/device/:port/swipe` - Perform swipe
-- `POST /api/device/:port/text` - Input text
-- `POST /api/device/:port/screenshot` - Take screenshot
-
-### WebSocket Events
-
-Connect to `ws://localhost:5051` for real-time updates:
-
-```javascript
-const ws = new WebSocket('ws://localhost:5051');
-
-// Get status
-ws.send(JSON.stringify({
-  type: 'get_status'
-}));
-
-// Create profile
-ws.send(JSON.stringify({
-  type: 'create_profile',
-  config: {
-    name: 'Profile 1',
-    settings: {
-      resolution: '720,1280',
-      dpi: 240
-    }
-  }
-}));
-
-// Add task
-ws.send(JSON.stringify({
-  type: 'add_task',
-  task: {
-    type: 'twitter_like',
-    profileId: 'profile_123',
-    data: {
-      username: 'user123',
-      password: 'pass123',
-      likeCount: 5
-    }
-  }
-}));
-```
-
-## Task Types
-
-- `twitter_like` - Like tweets
-- `twitter_follow` - Follow users
-- `twitter_retweet` - Retweet posts
-- `twitter_comment` - Comment on tweets
-- `twitter_post` - Post new tweets
-- `custom` - Custom automation tasks
-
-## Architecture
-
-```
-Worker-mobile/
-├── src/
-│   ├── core/
-│   │   └── LDPlayerController.ts    # LDPlayer control via ADB
-│   ├── automation/
-│   │   ├── MobileAutomation.ts      # Base automation class
-│   │   └── TwitterMobileAutomation.ts # Twitter-specific automation
-│   ├── services/
-│   │   ├── ProfileManager.ts        # Profile management
-│   │   └── TaskExecutor.ts          # Task execution engine
-│   ├── routes/
-│   │   └── index.ts                 # API routes
-│   ├── utils/
-│   │   └── logger.ts                # Logging utility
-│   └── index.ts                     # Main entry point
-├── package.json
-├── tsconfig.json
-└── .env
-```
-
-## Security Notes
-
-- Store sensitive credentials securely
-- Use proxies for better anonymity
-- Implement rate limiting for automation
-- Rotate device fingerprints regularly
-
-## Troubleshooting
-
-### ADB Connection Issues
-```bash
-# Restart ADB server
-adb kill-server
-adb start-server
-
-# Check connected devices
-adb devices
-```
-
-### LDPlayer Instance Not Starting
-- Ensure LDPlayer path is correct in .env
-- Check if virtualization is enabled in BIOS
-- Verify sufficient system resources
-
-### Profile Creation Failed
-- Check available disk space
-- Ensure write permissions in data directory
-- Verify LDPlayer is not running instances manually
-
-## Development
+### 3. Production Mode
 
 ```bash
-# Run in development mode
-npm run dev
-
-# Build for production
+# Build
 npm run build
 
-# Start production server
+# Run
 npm start
 ```
 
-## License
+**Mở browser:** `http://localhost:5051`
 
-MIT
+### 3. Test hệ thống
+
+```bash
+npm test
+```
+
+## 📚 Cách sử dụng
+
+### Tạo Profile (LDPlayer instance)
+
+```bash
+POST /api/profiles
+{
+  "name": "Worker 1",
+  "settings": {
+    "resolution": "720,1280",
+    "cpu": 2,
+    "memory": 2048
+  }
+}
+```
+
+### Launch Profile (Khởi động LDPlayer)
+
+```bash
+POST /api/profiles/:profileId/activate
+```
+
+### Execute Script (Chạy automation)
+
+```bash
+POST /api/profiles/:profileId/execute-script
+{
+  "scriptType": "twitter",
+  "scriptName": "likeTweets",
+  "scriptData": {
+    "searchQuery": "blockchain",
+    "count": 5
+  }
+}
+```
+
+## 📝 Available Scripts
+
+### Twitter Scripts
+
+- `likeTweets` - Like tweets
+- `followUser` - Follow user
+- `postTweet` - Post tweet
+- `retweet` - Retweet
+- `searchAndRead` - Search and scroll
+
+### Custom Scripts
+
+```javascript
+{
+  "scriptType": "custom",
+  "scriptName": "custom",
+  "scriptData": {
+    "adbCommands": [
+      { "type": "tap", "x": 360, "y": 640 },
+      { "type": "swipe", "x1": 360, "y1": 800, "x2": 360, "y2": 200 },
+      { "type": "input", "text": "Hello" },
+      { "type": "wait", "duration": 2000 }
+    ]
+  }
+}
+```
+
+## 🎯 Workflow
+
+```
+1. Create Profiles → 2. Activate Profiles → 3. Execute Scripts → 4. Monitor → 5. Cleanup
+```
+
+## 📊 API Endpoints
+
+```
+# Profiles
+GET    /api/profiles              - List profiles
+POST   /api/profiles              - Create profile
+POST   /api/profiles/:id/activate - Launch instance
+POST   /api/profiles/:id/deactivate - Stop instance
+
+# Scripts
+POST   /api/profiles/:id/execute-script - Execute script
+GET    /api/scripts               - List all scripts
+GET    /api/scripts/:id           - Get script status
+
+# Twitter Shortcuts
+POST   /api/twitter/like          - Like tweets
+POST   /api/twitter/post          - Post tweet
+POST   /api/twitter/follow        - Follow user
+
+# Statistics
+GET    /api/statistics            - Get stats
+```
+
+## 🔥 Example: Chạy 5 instances cùng lúc
+
+```javascript
+// Tạo 5 profiles
+const profiles = [];
+for (let i = 0; i < 5; i++) {
+  const res = await axios.post('/api/profiles', {
+    name: `Worker ${i + 1}`,
+    settings: { resolution: '720,1280', cpu: 2, memory: 2048 }
+  });
+  profiles.push(res.data.profile);
+}
+
+// Launch tất cả
+await Promise.all(
+  profiles.map(p => axios.post(`/api/profiles/${p.id}/activate`))
+);
+
+// Execute scripts trên tất cả
+await Promise.all(
+  profiles.map(p =>
+    axios.post(`/api/profiles/${p.id}/execute-script`, {
+      scriptType: 'twitter',
+      scriptName: 'likeTweets',
+      scriptData: { searchQuery: 'crypto', count: 3 }
+    })
+  )
+);
+```
+
+## ⚙️ Configuration
+
+### Profile Settings
+
+```javascript
+{
+  settings: {
+    resolution: '720,1280',  // Screen resolution
+    dpi: 240,                // Screen DPI
+    cpu: 2,                  // CPU cores
+    memory: 2048             // RAM in MB
+  },
+  network: {
+    useProxy: true,
+    proxyHost: '123.45.67.89',
+    proxyPort: 8080
+  },
+  location: {
+    latitude: 21.028511,
+    longitude: 105.804817    // GPS location
+  }
+}
+```
+
+## 🔧 Troubleshooting
+
+**Server không start:** Check LDCONSOLE_PATH in .env
+**Instance không launch:** Tắt LDPlayer và thử lại
+**Script timeout:** Tăng memory cho instance (2GB → 3GB)
+
+## 📈 Performance
+
+- 1 instance: ~2s create, ~15s launch, ~3-5s/script
+- 5 instances: ~25-30 tasks/minute
+- 10 instances: ~45-50 tasks/minute

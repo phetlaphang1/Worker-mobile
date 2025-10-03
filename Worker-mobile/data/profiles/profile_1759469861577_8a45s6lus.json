@@ -1,0 +1,21 @@
+{
+  "id": "profile_1759469861577_8a45s6lus",
+  "name": "X Worker 2",
+  "instanceName": "Profile_profile_1759469861577_8a45s6lus",
+  "port": 5571,
+  "settings": {
+    "resolution": "720,1280",
+    "dpi": 240,
+    "cpu": 2,
+    "memory": 2048,
+    "androidVersion": "9"
+  },
+  "device": {},
+  "network": {
+    "useProxy": false
+  },
+  "apps": {},
+  "status": "inactive",
+  "createdAt": "2025-10-03T05:37:41.577Z",
+  "lastUsed": "2025-10-03T10:22:17.135Z"
+}

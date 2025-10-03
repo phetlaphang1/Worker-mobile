@@ -4,17 +4,19 @@
   "description": "Mobile automation worker for LDPlayer Android emulator",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "tsx server/index.ts",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:watch\"",
+    "dev:server": "nodemon --watch server --ext ts,js --exec tsx server/index.ts",
     "dev:client": "cd client && vite",
+    "dev:watch": "echo 'Hot reload enabled! Server: http://localhost:5051 | Client dev: http://localhost:5173'",
+    "dev:server-only": "tsx server/index.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "cd client && vite build",
     "build:server": "tsc --project server/tsconfig.json",
     "start": "node dist/index.js",
-    "test": "jest",
-    "detect-ldplayer": "tsx server/utils/detectLDPlayer.ts",
-    "detect-ldplayer-update": "tsx server/utils/detectLDPlayer.ts --auto-update",
-    "detect-windows": "detect-ldplayer.bat"
+    "test": "node test-boxphone.js",
+    "test:ldplayer": "node test-ldplayer.js",
+    "check": "node check-system.js",
+    "detect-ldplayer": "tsx server/utils/detectLDPlayer.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^3.0.0",

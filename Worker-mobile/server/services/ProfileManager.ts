@@ -2,6 +2,7 @@ import LDPlayerController, { LDPlayerInstance } from '../core/LDPlayerController
 import { logger } from '../utils/logger.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { APPS_CONFIG, getAutoInstallApps } from '../config/apps.config.js';
 
 export interface MobileProfile {
   id: string;
@@ -53,11 +54,17 @@ export class ProfileManager {
   private profiles: Map<string, MobileProfile> = new Map();
   private controller: LDPlayerController;
   private profilesPath: string;
+  private scriptExecutor: any; // Will be injected later
 
   constructor(controller: LDPlayerController) {
     this.controller = controller;
     this.profilesPath = path.join(process.cwd(), 'data', 'profiles');
     this.initializeStorage();
+  }
+
+  // Inject script executor (to avoid circular dependency)
+  setScriptExecutor(scriptExecutor: any): void {
+    this.scriptExecutor = scriptExecutor;
   }
 
   private async initializeStorage(): Promise<void> {
@@ -176,6 +183,9 @@ export class ProfileManager {
       // Launch instance
       await this.controller.launchInstance(profile.instanceName);
 
+      // Auto-install apps from config
+      await this.autoInstallApps(profileId);
+
       // Configure device settings
       if (profile.device && Object.keys(profile.device).length > 0) {
         await this.controller.setDeviceInfo(profile.port, profile.device);
@@ -209,6 +219,17 @@ export class ProfileManager {
       profile.status = 'active';
       profile.lastUsed = new Date();
       await this.saveProfile(profile);
+
+      // Auto-execute assigned scripts OR launch Google app
+      const autoRunScripts = profile.metadata?.autoRunScripts || [];
+      if (autoRunScripts.length > 0) {
+        // Execute auto-run scripts
+        logger.info(`Auto-executing ${autoRunScripts.length} script(s) for ${profile.name}`);
+        await this.executeAutoRunScripts(profileId, autoRunScripts);
+      } else {
+        // No scripts assigned, just launch Google app
+        await this.autoLaunchApp(profileId);
+      }
 
       logger.info(`Activated profile: ${profile.name}`);
     } catch (error) {
@@ -479,9 +500,204 @@ export class ProfileManager {
     await this.saveProfile(profile);
   }
 
+  // Auto-install apps from config
+  private async autoInstallApps(profileId: string): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) return;
+
+    // Get selected apps from profile metadata
+    const selectedApps = profile.metadata?.selectedApps || [];
+
+    // If selectedApps specified, install those apps
+    if (selectedApps.length > 0) {
+      logger.info(`Installing ${selectedApps.length} selected apps on profile: ${profile.name}`);
+      await this.installSelectedApps(profileId, selectedApps);
+      return;
+    }
+
+    // Otherwise, use auto-install from config
+    const appsToInstall = getAutoInstallApps();
+    if (appsToInstall.length === 0) {
+      logger.info('No apps configured for auto-install');
+      return;
+    }
+
+    logger.info(`Auto-installing ${appsToInstall.length} apps on profile: ${profile.name}`);
+
+    for (const appConfig of appsToInstall) {
+      try {
+        // Check if app already installed
+        const isInstalled = await this.controller.isAppInstalled(
+          profile.port,
+          appConfig.packageName
+        );
+
+        if (isInstalled) {
+          logger.info(`${appConfig.name} already installed on ${profile.name}`);
+          profile.apps[appConfig.name.toLowerCase()] = {
+            installed: true,
+            packageName: appConfig.packageName,
+          };
+          continue;
+        }
+
+        // Check if APK file exists
+        const apkPath = path.resolve(process.cwd(), appConfig.apkPath);
+        try {
+          await fs.access(apkPath);
+        } catch {
+          logger.warn(`APK not found: ${apkPath}. Skipping ${appConfig.name}`);
+          continue;
+        }
+
+        // Install APK
+        logger.info(`Installing ${appConfig.name} from ${apkPath}...`);
+        await this.controller.installAPK(profile.port, apkPath);
+
+        // Update profile
+        profile.apps[appConfig.name.toLowerCase()] = {
+          installed: true,
+          packageName: appConfig.packageName,
+        };
+
+        logger.info(`${appConfig.name} installed successfully on ${profile.name}`);
+      } catch (error) {
+        logger.error(`Failed to install ${appConfig.name}:`, error);
+      }
+    }
+
+    await this.saveProfile(profile);
+  }
+
+  // Install selected apps from filenames
+  private async installSelectedApps(profileId: string, selectedAppsFilenames: string[]): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) return;
+
+    const { scanAvailableApps } = await import('../utils/scanApks.js');
+    const availableApps = await scanAvailableApps();
+
+    for (const filename of selectedAppsFilenames) {
+      const appInfo = availableApps.find(app => app.fileName === filename);
+      if (!appInfo) {
+        logger.warn(`App ${filename} not found in apks folder`);
+        continue;
+      }
+
+      try {
+        // Check if app already installed
+        const isInstalled = await this.controller.isAppInstalled(
+          profile.port,
+          appInfo.packageName || ''
+        );
+
+        if (isInstalled) {
+          logger.info(`${appInfo.name} already installed on ${profile.name}`);
+          profile.apps[appInfo.name.toLowerCase()] = {
+            installed: true,
+            packageName: appInfo.packageName,
+          };
+          continue;
+        }
+
+        // Install APK
+        logger.info(`Installing ${appInfo.name} from ${appInfo.filePath}...`);
+        const apkPath = path.resolve(process.cwd(), appInfo.filePath);
+        await this.controller.installAPK(profile.port, apkPath);
+
+        // Update profile
+        profile.apps[appInfo.name.toLowerCase()] = {
+          installed: true,
+          packageName: appInfo.packageName,
+        };
+
+        logger.info(`${appInfo.name} installed successfully on ${profile.name}`);
+      } catch (error) {
+        logger.error(`Failed to install ${appInfo.name}:`, error);
+      }
+    }
+
+    await this.saveProfile(profile);
+  }
+
   // Helper method to generate unique profile ID
   private generateProfileId(): string {
     return `profile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  // Auto-launch app after instance activation
+  private async autoLaunchApp(profileId: string): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) return;
+
+    try {
+      // Wait for instance to fully boot (5 seconds)
+      logger.info(`Waiting for instance to boot: ${profile.name}`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Launch Google app (com.android.chrome or com.google.android.googlequicksearchbox)
+      const googlePackages = [
+        'com.android.chrome',                      // Chrome browser
+        'com.google.android.googlequicksearchbox', // Google app
+        'com.android.browser',                     // Default browser
+      ];
+
+      for (const packageName of googlePackages) {
+        try {
+          // Check if app exists
+          const isInstalled = await this.controller.isAppInstalled(profile.port, packageName);
+          if (isInstalled) {
+            logger.info(`Launching ${packageName} on ${profile.name}`);
+            await this.controller.launchApp(profile.port, packageName);
+            logger.info(`${packageName} launched successfully`);
+            return; // Exit after launching first available app
+          }
+        } catch (error) {
+          logger.debug(`${packageName} not available or failed to launch`);
+        }
+      }
+
+      logger.warn(`No Google app found to auto-launch on ${profile.name}`);
+    } catch (error) {
+      logger.error(`Failed to auto-launch app on ${profileId}:`, error);
+      // Don't throw - this is optional feature
+    }
+  }
+
+  // Execute auto-run scripts after instance activation
+  private async executeAutoRunScripts(profileId: string, scripts: Array<{scriptName: string; scriptData: Record<string, any>}>): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile || !this.scriptExecutor) return;
+
+    try {
+      // Wait for instance to fully boot
+      logger.info(`Waiting for instance to boot before executing scripts: ${profile.name}`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Execute each script in sequence
+      for (const script of scripts) {
+        try {
+          logger.info(`Auto-executing script "${script.scriptName}" on ${profile.name}`);
+
+          await this.scriptExecutor.queueScript({
+            profileId: profile.id,
+            scriptType: 'twitter', // Default to twitter for now
+            scriptName: script.scriptName,
+            scriptData: script.scriptData
+          });
+
+          logger.info(`Script "${script.scriptName}" queued successfully for ${profile.name}`);
+        } catch (error) {
+          logger.error(`Failed to execute script "${script.scriptName}":`, error);
+          // Continue with next script even if one fails
+        }
+      }
+
+      logger.info(`All auto-run scripts queued for ${profile.name}`);
+    } catch (error) {
+      logger.error(`Failed to execute auto-run scripts for ${profileId}:`, error);
+      // Don't throw - scripts are optional
+    }
   }
 
   // Get profile statistics

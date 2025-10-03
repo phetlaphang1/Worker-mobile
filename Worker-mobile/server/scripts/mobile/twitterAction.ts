@@ -7,7 +7,6 @@
  */
 
 import TwitterMobileAutomation from '../../automation/TwitterMobileAutomation.js';
-import LDPlayerController from '../../core/LDPlayerController.js';
 import { MobileProfile } from '../../services/ProfileManager.js';
 import { logger } from '../../utils/logger.js';
 import axios from 'axios';
@@ -67,13 +66,13 @@ export async function execute(
     // Upload image if provided (mobile: push to device, then select)
     let imagePath: string | undefined;
     if (req.imageURL) {
-      imagePath = await uploadImageToDevice(twitter, req.imageURL, config.taskPath);
+      imagePath = await uploadImageToDevice(req.imageURL, config.taskPath);
     }
 
     // Post or reply content
     if (req.URL) {
       // Reply to tweet
-      res.postURL = await replyToTweet(twitter, req.content, imagePath);
+      res.postURL = await replyToTweet(twitter, req.content);
     } else {
       // Post new tweet
       const result = await twitter.postTweet(req.content, {
@@ -89,7 +88,7 @@ export async function execute(
 
     // Clean up image from device
     if (imagePath) {
-      await deleteImageFromDevice(twitter, imagePath);
+      await deleteImageFromDevice(imagePath);
     }
 
     // Post result to N8N webhook if needed
@@ -107,9 +106,9 @@ export async function execute(
 
 /**
  * Upload image to Android device
+ * TODO: Implement ADB file push when controller is available
  */
 async function uploadImageToDevice(
-  twitter: TwitterMobileAutomation,
   imageURL: string,
   taskPath: string
 ): Promise<string> {
@@ -123,10 +122,11 @@ async function uploadImageToDevice(
 
     // Push image to Android device via ADB
     const deviceImagePath = '/sdcard/Pictures/twitter_upload.jpg';
-    // Note: Need access to controller for ADB commands
+    // TODO: Need access to controller for ADB commands
     // await controller.pushFile(port, localImagePath, deviceImagePath);
 
-    logger.info(`[Mobile Twitter Action] Image uploaded to device: ${deviceImagePath}`);
+    logger.info(`[Mobile Twitter Action] Image downloaded locally: ${localImagePath}`);
+    logger.warn('[Mobile Twitter Action] ADB file push not implemented yet');
     return deviceImagePath;
   } catch (error) {
     logger.error('[Mobile Twitter Action] Failed to upload image:', error);
@@ -136,11 +136,11 @@ async function uploadImageToDevice(
 
 /**
  * Reply to a tweet (mobile version)
+ * TODO: Implement image attachment for replies
  */
 async function replyToTweet(
   twitter: TwitterMobileAutomation,
-  content: string,
-  imagePath?: string
+  content: string
 ): Promise<string | undefined> {
   try {
     // On mobile: tap the tweet, then tap reply button
@@ -149,6 +149,7 @@ async function replyToTweet(
     logger.info('[Mobile Twitter Action] Reply posted');
 
     // Return URL (would need to implement getting tweet URL on mobile)
+    // TODO: Extract tweet URL from timeline
     return undefined;
   } catch (error) {
     logger.error('[Mobile Twitter Action] Failed to reply:', error);
@@ -158,15 +159,14 @@ async function replyToTweet(
 
 /**
  * Delete image from device
+ * TODO: Implement ADB file deletion when controller is available
  */
-async function deleteImageFromDevice(
-  twitter: TwitterMobileAutomation,
-  imagePath: string
-): Promise<void> {
+async function deleteImageFromDevice(imagePath: string): Promise<void> {
   try {
-    // Use ADB to delete file
-    // await controller.deleteFile(port, imagePath);
-    logger.info('[Mobile Twitter Action] Image deleted from device');
+    // TODO: Use ADB to delete file from device
+    // await controller.executeCommand(`adb shell rm ${imagePath}`);
+    logger.info(`[Mobile Twitter Action] Should delete from device: ${imagePath}`);
+    logger.warn('[Mobile Twitter Action] ADB file deletion not implemented yet');
   } catch (error) {
     logger.warn('[Mobile Twitter Action] Failed to delete image:', error);
   }

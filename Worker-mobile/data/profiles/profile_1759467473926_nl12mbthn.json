@@ -1,0 +1,21 @@
+{
+  "id": "profile_1759467473926_nl12mbthn",
+  "name": "Twitter Test Worker",
+  "instanceName": "Profile_profile_1759467473926_nl12mbthn",
+  "port": 5559,
+  "settings": {
+    "resolution": "720,1280",
+    "dpi": 240,
+    "cpu": 2,
+    "memory": 2048,
+    "androidVersion": "9"
+  },
+  "device": {},
+  "network": {
+    "useProxy": false
+  },
+  "apps": {},
+  "status": "inactive",
+  "createdAt": "2025-10-03T04:57:53.926Z",
+  "lastUsed": "2025-10-03T10:20:38.845Z"
+}

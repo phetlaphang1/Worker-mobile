@@ -2,6 +2,7 @@ import { Express, Request, Response } from 'express';
 import LDPlayerController from '../core/LDPlayerController.js';
 import ProfileManager from '../services/ProfileManager.js';
 import TaskExecutor from '../services/TaskExecutor.js';
+import MobileScriptExecutor from '../services/MobileScriptExecutor.js';
 import { setupAuthRoutes } from './auth.js';
 import { logger } from '../utils/logger.js';
 import { mockSettings, mockStatistics } from './mockData.js';
@@ -10,10 +11,11 @@ interface RouteServices {
   ldPlayerController: LDPlayerController;
   profileManager: ProfileManager;
   taskExecutor: TaskExecutor;
+  scriptExecutor: MobileScriptExecutor;
 }
 
 export function setupRoutes(app: Express, services: RouteServices) {
-  const { ldPlayerController, profileManager, taskExecutor } = services;
+  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor } = services;
 
   // Setup authentication routes first
   setupAuthRoutes(app);
@@ -28,6 +30,18 @@ export function setupRoutes(app: Express, services: RouteServices) {
   });
 
   // Profile routes
+  // Get available apps from apks folder
+  app.get('/api/apps/available', async (req: Request, res: Response) => {
+    try {
+      const { scanAvailableApps } = await import('../utils/scanApks.js');
+      const apps = await scanAvailableApps();
+      res.json(apps);
+    } catch (error) {
+      logger.error('Error getting available apps:', error);
+      res.status(500).json({ error: 'Failed to get available apps' });
+    }
+  });
+
   app.get('/api/profiles', (req: Request, res: Response) => {
     try {
       const profiles = profileManager.getAllProfiles();
@@ -41,7 +55,33 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles', async (req: Request, res: Response) => {
     try {
-      const profile = await profileManager.createProfile(req.body);
+      const { selectedApps, autoRunScripts, ...profileData } = req.body;
+
+      // Create profile
+      const profile = await profileManager.createProfile(profileData);
+
+      // Install selected apps if provided
+      if (selectedApps && Array.isArray(selectedApps) && selectedApps.length > 0) {
+        // Store selected apps in profile metadata for installation during activation
+        profile.metadata = {
+          ...profile.metadata,
+          selectedApps,
+        };
+      }
+
+      // Store auto-run scripts if provided
+      if (autoRunScripts && Array.isArray(autoRunScripts) && autoRunScripts.length > 0) {
+        profile.metadata = {
+          ...profile.metadata,
+          autoRunScripts,
+        };
+      }
+
+      // Update profile with metadata
+      if (profile.metadata && Object.keys(profile.metadata).length > 0) {
+        await profileManager.updateProfile(profile.id, { metadata: profile.metadata });
+      }
+
       res.json({ profile });
     } catch (error) {
       logger.error('Error creating profile:', error);
@@ -355,6 +395,74 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error executing twitter caring:', error);
       res.status(500).json({ error: 'Failed to execute twitter caring' });
+    }
+  });
+
+  // ============================================
+  // Script Execution Routes (BoxPhone-like)
+  // ============================================
+
+  // Execute script on profile
+  app.post('/api/profiles/:profileId/execute-script', async (req: Request, res: Response) => {
+    try {
+      const { profileId } = req.params;
+      const { scriptType, scriptName, scriptData } = req.body;
+
+      const task = await scriptExecutor.queueScript({
+        profileId,
+        scriptType,
+        scriptName,
+        scriptData
+      });
+
+      res.json({ success: true, task });
+    } catch (error) {
+      logger.error('Error executing script:', error);
+      res.status(500).json({ error: 'Failed to execute script' });
+    }
+  });
+
+  // Get all script tasks
+  app.get('/api/scripts', (req: Request, res: Response) => {
+    try {
+      const scripts = scriptExecutor.getAllTasks();
+      res.json(scripts);
+    } catch (error) {
+      logger.error('Error getting scripts:', error);
+      res.status(500).json({ error: 'Failed to get scripts' });
+    }
+  });
+
+  // Twitter shortcuts
+  app.post('/api/twitter/like', async (req: Request, res: Response) => {
+    try {
+      const { profileId, searchQuery, count } = req.body;
+      const task = await scriptExecutor.queueScript({
+        profileId,
+        scriptType: 'twitter',
+        scriptName: 'likeTweets',
+        scriptData: { searchQuery, count }
+      });
+      res.json({ success: true, task });
+    } catch (error) {
+      logger.error('Error executing Twitter like:', error);
+      res.status(500).json({ error: 'Failed to execute Twitter like' });
+    }
+  });
+
+  app.post('/api/twitter/post', async (req: Request, res: Response) => {
+    try {
+      const { profileId, text, media, poll } = req.body;
+      const task = await scriptExecutor.queueScript({
+        profileId,
+        scriptType: 'twitter',
+        scriptName: 'postTweet',
+        scriptData: { text, media, poll }
+      });
+      res.json({ success: true, task });
+    } catch (error) {
+      logger.error('Error executing Twitter post:', error);
+      res.status(500).json({ error: 'Failed to execute Twitter post' });
     }
   });
 }

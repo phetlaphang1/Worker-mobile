@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import LDPlayerController from './core/LDPlayerController.js';
 import ProfileManager from './services/ProfileManager.js';
 import TaskExecutor from './services/TaskExecutor.js';
+import MobileScriptExecutor from './services/MobileScriptExecutor.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
@@ -52,6 +53,10 @@ const taskExecutor = new TaskExecutor(ldPlayerController, profileManager, {
   maxConcurrentTasks: 5,
   taskCheckInterval: 30000
 });
+const scriptExecutor = new MobileScriptExecutor(ldPlayerController, profileManager);
+
+// Inject scriptExecutor into profileManager (to avoid circular dependency)
+profileManager.setScriptExecutor(scriptExecutor);
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
@@ -140,7 +145,8 @@ export function broadcast(type: string, data: any): void {
 setupRoutes(app, {
   ldPlayerController,
   profileManager,
-  taskExecutor
+  taskExecutor,
+  scriptExecutor
 });
 
 // Serve React app for all non-API routes

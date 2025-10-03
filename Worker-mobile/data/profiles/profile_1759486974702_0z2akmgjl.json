@@ -1,0 +1,35 @@
+{
+  "id": "profile_1759486974702_0z2akmgjl",
+  "name": "Demo X",
+  "instanceName": "Profile_profile_1759486974702_0z2akmgjl",
+  "port": 5577,
+  "settings": {
+    "resolution": "720,1280",
+    "dpi": 240,
+    "cpu": 2,
+    "memory": 2048,
+    "androidVersion": "9"
+  },
+  "device": {},
+  "network": {
+    "useProxy": false
+  },
+  "apps": {},
+  "status": "inactive",
+  "createdAt": "2025-10-03T10:22:54.703Z",
+  "metadata": {
+    "selectedApps": [
+      "twitter.apk"
+    ],
+    "autoRunScripts": [
+      {
+        "scriptName": "likeTweets",
+        "scriptData": {
+          "searchQuery": "1",
+          "query": "1",
+          "count": 111
+        }
+      }
+    ]
+  }
+}

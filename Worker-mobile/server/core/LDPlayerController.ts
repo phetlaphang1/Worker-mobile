@@ -40,9 +40,19 @@ export class LDPlayerController {
   }): Promise<LDPlayerInstance> {
     try {
       // Create new instance
-      await execAsync(`"${this.ldConsolePath}" add --name "${name}"`);
+      try {
+        await execAsync(`"${this.ldConsolePath}" add --name "${name}"`);
+      } catch (createError: any) {
+        // Instance creation might fail with exit code 6 but still create the instance
+        // Check if instance exists
+        const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
+        if (!listResult.stdout.includes(name)) {
+          throw createError;
+        }
+        logger.warn(`Instance ${name} created with warning (exit code: ${createError.code})`);
+      }
 
-      // Configure instance
+      // Configure instance - always try to modify even if create had warnings
       if (config) {
         const modifyCommands = [];
         if (config.resolution) {
@@ -59,19 +69,36 @@ export class LDPlayerController {
         }
 
         if (modifyCommands.length > 0) {
-          await execAsync(`"${this.ldConsolePath}" modify --name "${name}" ${modifyCommands.join(' ')}`);
+          try {
+            await execAsync(`"${this.ldConsolePath}" modify --name "${name}" ${modifyCommands.join(' ')}`);
+          } catch (modifyError) {
+            logger.warn(`Failed to modify instance settings, using defaults`);
+          }
+        }
+      }
+
+      // Get instance index from ldconsole list
+      const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
+      const lines = listResult.stdout.trim().split('\n');
+      let instanceIndex = 0;
+
+      for (const line of lines) {
+        const parts = line.split(',');
+        if (parts[1] === name) {
+          instanceIndex = parseInt(parts[0], 10);
+          break;
         }
       }
 
       const instance: LDPlayerInstance = {
         name,
-        index: this.instances.size,
-        port: 5555 + this.instances.size * 2,
+        index: instanceIndex,
+        port: 5555 + instanceIndex * 2,
         status: 'stopped'
       };
 
       this.instances.set(name, instance);
-      logger.info(`Created LDPlayer instance: ${name}`);
+      logger.info(`Created LDPlayer instance: ${name} (index: ${instanceIndex}, port: ${instance.port})`);
 
       return instance;
     } catch (error) {
@@ -174,7 +201,7 @@ export class LDPlayerController {
     }
   }
 
-  private async waitForDevice(port: number, timeout: number = 30000): Promise<void> {
+  private async waitForDevice(port: number, timeout: number = 90000): Promise<void> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
@@ -279,6 +306,16 @@ export class LDPlayerController {
     } catch (error) {
       logger.error(`Failed to close app on port ${port}:`, error);
       throw error;
+    }
+  }
+
+  async isAppInstalled(port: number, packageName: string): Promise<boolean> {
+    try {
+      const result = await execAsync(`"${this.adbPath}" -s 127.0.0.1:${port} shell pm list packages ${packageName}`);
+      return result.stdout.includes(packageName);
+    } catch (error) {
+      logger.debug(`Error checking if app ${packageName} is installed:`, error);
+      return false;
     }
   }
 
