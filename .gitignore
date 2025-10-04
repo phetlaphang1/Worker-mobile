@@ -1,23 +1,18 @@
-
-storage
-zen
-node_modules
-dist
-index.js
+node_modules/
+dist/
 .env
-.DS_Store
-server/public
-vite.config.ts.*
-*.tar.gz
-*.zip
 *.log
-*.bak
-*.swp
-*.tmp
-*.pid
-coverage
-*.tgz
-*.lock
-*.sublime-workspace
-*.sublime-project
-.idea                                                                                           
+.DS_Store
+
+# APK files (too large for git)
+apks/
+*.apk
+*.xapk
+
+# Build output
+public/assets/*.js
+public/assets/*.css
+server/dist/
+
+# Data files
+data/

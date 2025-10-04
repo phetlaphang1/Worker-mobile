@@ -1,2 +1,0 @@
-export const N8N_ROXANE_URL_FOR_READING = 'https://n8n.roxane.one/webhook/3af47a61-00c2-4233-a4c8-54ef3c7644e1';
-export const N8N_ROXANE_URL_FOR_REPLY = 'https://n8n.roxane.one/webhook/459504fa-ac07-4b1f-b335-f8deef0e9718';

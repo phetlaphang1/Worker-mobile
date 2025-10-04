@@ -1,5 +1,10 @@
 import { apiRequest } from "./queryClient";
-import type { Task, Profile, InsertProfile } from "@shared/schema";
+// import type { Task, Profile, InsertProfile } from "@shared/schema";
+
+// Temporary types (should be shared from server)
+type Task = any;
+type Profile = any;
+type InsertProfile = any;
 
 export const api = {
   // Task operations

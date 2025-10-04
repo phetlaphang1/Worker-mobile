@@ -1,1 +1,0 @@
-export const WEB_SOCKET_PORT = 5011// Main server port where WebSocket is attached

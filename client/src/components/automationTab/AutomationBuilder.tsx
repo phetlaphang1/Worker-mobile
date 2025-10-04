@@ -17,7 +17,7 @@ import { useReactFlow, ReactFlowProvider } from "reactflow";
 import "reactflow/dist/style.css";
 
 import { FlowDefinition, NodeKind, NodeData } from "./types";
-import { templateManager } from "../../../../server/scripts/templates/templateManager";
+import { templateManager } from "./templateManager";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
