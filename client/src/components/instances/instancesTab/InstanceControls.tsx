@@ -15,6 +15,7 @@ import {
   PlayCircle,
   PauseCircle,
   Filter,
+  RefreshCw,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +31,12 @@ interface InstanceControlsProps {
   onNavigateToSettings?: () => void;
   isAutoRunEnabled: boolean;
   totalProfiles: number;
+  onRunAll?: () => void;
+  onStopAll?: () => void;
+  isRunningAll?: boolean;
+  isStoppingAll?: boolean;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const InstanceControls: React.FC<InstanceControlsProps> = ({
@@ -43,6 +50,12 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
   onNavigateToSettings,
   isAutoRunEnabled,
   totalProfiles,
+  onRunAll,
+  onStopAll,
+  isRunningAll = false,
+  isStoppingAll = false,
+  onRefresh,
+  isRefreshing = false,
 }) => {
   const { toast } = useToast();
 
@@ -54,10 +67,38 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
           <Button
             onClick={onCreateNew}
             disabled={isCreating}
-            className="bg-accent text-white hover:bg-emerald-600"
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
           >
             <Plus className="h-4 w-4 mr-2" />
-            {isCreating ? "Creating..." : "New"}
+            {isCreating ? "Creating Instance..." : "New Instance"}
+          </Button>
+
+          <Button
+            onClick={onRunAll}
+            disabled={isRunningAll || totalProfiles === 0}
+            className="bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <PlayCircle className="h-4 w-4 mr-2" />
+            {isRunningAll ? "Running All..." : "Run All"}
+          </Button>
+
+          <Button
+            onClick={onStopAll}
+            disabled={isStoppingAll || totalProfiles === 0}
+            className="bg-red-600 text-white hover:bg-red-700"
+          >
+            <PauseCircle className="h-4 w-4 mr-2" />
+            {isStoppingAll ? "Stopping All..." : "Stop All"}
+          </Button>
+
+          <Button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            variant="outline"
+            className="border-gray-300 hover:bg-gray-100"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? "Refreshing..." : "Refresh"}
           </Button>
 
           <div className="relative">

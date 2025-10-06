@@ -28,7 +28,7 @@ interface TwitterAppSession {
 
 export class TwitterAppManager {
   private controller: LDPlayerController;
-  private sessions: Map<string, TwitterAppSession> = new Map();
+  private sessions: Map<number, TwitterAppSession> = new Map();
   private keepAliveInterval: NodeJS.Timeout | null = null;
   private sessionTimeout: number = 30 * 60 * 1000; // 30 minutes
 
@@ -223,7 +223,7 @@ export class TwitterAppManager {
   /**
    * Force close Twitter app for a profile
    */
-  async closeTwitterApp(profileId: string): Promise<void> {
+  async closeTwitterApp(profileId: number): Promise<void> {
     const session = this.sessions.get(profileId);
     if (!session) {
       return;
@@ -249,14 +249,14 @@ export class TwitterAppManager {
   /**
    * Get session info
    */
-  getSessionInfo(profileId: string): TwitterAppSession | undefined {
+  getSessionInfo(profileId: number): TwitterAppSession | undefined {
     return this.sessions.get(profileId);
   }
 
   /**
    * Check if profile has active session
    */
-  hasActiveSession(profileId: string): boolean {
+  hasActiveSession(profileId: number): boolean {
     const session = this.sessions.get(profileId);
     return session?.isAppRunning ?? false;
   }

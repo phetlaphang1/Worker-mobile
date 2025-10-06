@@ -161,7 +161,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.put('/api/profiles/:profileId', async (req: Request, res: Response) => {
     try {
-      const profile = await profileManager.updateProfile(req.params.profileId, req.body);
+      const profileId = parseInt(req.params.profileId);
+      const profile = await profileManager.updateProfile(profileId, req.body);
       res.json({ profile });
     } catch (error) {
       logger.error('Error updating profile:', error);
@@ -171,7 +172,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.delete('/api/profiles/:profileId', async (req: Request, res: Response) => {
     try {
-      await profileManager.deleteProfile(req.params.profileId);
+      const profileId = parseInt(req.params.profileId);
+      await profileManager.deleteProfile(profileId);
       res.json({ success: true });
     } catch (error) {
       logger.error('Error deleting profile:', error);
@@ -181,7 +183,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles/:profileId/activate', async (req: Request, res: Response) => {
     try {
-      await profileManager.activateProfile(req.params.profileId);
+      const profileId = parseInt(req.params.profileId);
+      await profileManager.activateProfile(profileId);
       res.json({ success: true });
     } catch (error) {
       logger.error('Error activating profile:', error);
@@ -191,7 +194,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles/:profileId/deactivate', async (req: Request, res: Response) => {
     try {
-      await profileManager.deactivateProfile(req.params.profileId);
+      const profileId = parseInt(req.params.profileId);
+      await profileManager.deactivateProfile(profileId);
       res.json({ success: true });
     } catch (error) {
       logger.error('Error deactivating profile:', error);
@@ -201,12 +205,13 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles/:profileId/clone', async (req: Request, res: Response) => {
     try {
+      const profileId = parseInt(req.params.profileId);
       const { newName, copyApps, launchAndSetup } = req.body;
       if (!newName) {
         return res.status(400).json({ error: 'newName is required' });
       }
       const clonedProfile = await profileManager.cloneProfile(
-        req.params.profileId,
+        profileId,
         newName,
         { copyApps, launchAndSetup }
       );
@@ -219,11 +224,12 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles/:profileId/install-app', async (req: Request, res: Response) => {
     try {
+      const profileId = parseInt(req.params.profileId);
       const { apkFileName } = req.body;
       if (!apkFileName) {
         return res.status(400).json({ error: 'apkFileName is required' });
       }
-      await profileManager.installAppOnProfile(req.params.profileId, apkFileName);
+      await profileManager.installAppOnProfile(profileId, apkFileName);
       res.json({ success: true });
     } catch (error) {
       logger.error('Error installing app:', error);
@@ -233,11 +239,12 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles/:profileId/launch-app', async (req: Request, res: Response) => {
     try {
+      const profileId = parseInt(req.params.profileId);
       const { packageName } = req.body;
       if (!packageName) {
         return res.status(400).json({ error: 'packageName is required' });
       }
-      await profileManager.launchAppOnProfile(req.params.profileId, packageName);
+      await profileManager.launchAppOnProfile(profileId, packageName);
       res.json({ success: true });
     } catch (error) {
       logger.error('Error launching app:', error);
@@ -466,9 +473,21 @@ export function setupRoutes(app: Express, services: RouteServices) {
   });
 
   // Profile launch/stop routes
+  // Launch instance only (without running scripts)
+  app.post('/api/profiles/:id/launch-only', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.id);
+      await profileManager.launchInstanceOnly(profileId);
+      res.json({ success: true, message: 'Instance launched without scripts' });
+    } catch (error) {
+      logger.error('Error launching instance:', error);
+      res.status(500).json({ error: 'Failed to launch instance' });
+    }
+  });
+
   app.post('/api/profiles/:id/launch', async (req: Request, res: Response) => {
     try {
-      const profileId = req.params.id;
+      const profileId = parseInt(req.params.id);
       const { headless = false } = req.body;
       await profileManager.activateProfile(profileId);
       res.json({ success: true, message: 'Profile launched' });
@@ -480,12 +499,23 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles/:id/stop', async (req: Request, res: Response) => {
     try {
-      const profileId = req.params.id;
+      const profileId = parseInt(req.params.id);
       await profileManager.deactivateProfile(profileId);
       res.json({ success: true, message: 'Profile stopped' });
     } catch (error) {
       logger.error('Error stopping profile:', error);
       res.status(500).json({ error: 'Failed to stop profile' });
+    }
+  });
+
+  // Refresh all profile statuses from LDPlayer
+  app.post('/api/profiles/refresh-status', async (req: Request, res: Response) => {
+    try {
+      await profileManager.refreshAllProfileStatuses();
+      res.json({ success: true, message: 'Profile statuses refreshed' });
+    } catch (error) {
+      logger.error('Error refreshing profile statuses:', error);
+      res.status(500).json({ error: 'Failed to refresh statuses' });
     }
   });
 
@@ -506,9 +536,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.get('/api/profiles/:id', (req: Request, res: Response) => {
     try {
-      const profileId = req.params.id;
-      const profiles = profileManager.getAllProfiles();
-      const profile = profiles.find(p => String(p.id) === profileId);
+      const profileId = parseInt(req.params.id);
+      const profile = profileManager.getProfile(profileId);
       if (!profile) {
         return res.status(404).json({ error: 'Profile not found' });
       }
@@ -545,7 +574,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Execute script on profile
   app.post('/api/profiles/:profileId/execute-script', async (req: Request, res: Response) => {
     try {
-      const { profileId } = req.params;
+      const profileId = parseInt(req.params.profileId);
       const { scriptType, scriptName, scriptData } = req.body;
 
       const task = await scriptExecutor.queueScript({
@@ -671,7 +700,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
         return res.status(500).json({ error: 'Appium Script Service not initialized' });
       }
 
-      const tasks = appiumScriptService.getTasksForProfile(req.params.profileId);
+      const profileId = parseInt(req.params.profileId);
+      const tasks = appiumScriptService.getTasksForProfile(profileId);
       res.json(tasks);
     } catch (error) {
       logger.error('Error getting profile Appium tasks:', error);
@@ -686,7 +716,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
         return res.status(500).json({ error: 'Appium Script Service not initialized' });
       }
 
-      await appiumScriptService.closeSession(req.params.profileId);
+      const profileId = parseInt(req.params.profileId);
+      await appiumScriptService.closeSession(profileId);
       res.json({ success: true });
     } catch (error) {
       logger.error('Error closing Appium session:', error);
@@ -716,7 +747,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Get profile settings (including auto-run scripts, apps, etc.)
   app.get('/api/profiles/:profileId/settings', (req: Request, res: Response) => {
     try {
-      const { profileId } = req.params;
+      const profileId = parseInt(req.params.profileId);
       const profile = profileManager.getProfile(profileId);
 
       if (!profile) {
@@ -771,7 +802,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Update profile settings (including auto-run scripts)
   app.put('/api/profiles/:profileId/settings', async (req: Request, res: Response) => {
     try {
-      const { profileId } = req.params;
+      const profileId = parseInt(req.params.profileId);
       const {
         hardware,
         device,
@@ -847,7 +878,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Set scripts for instance (auto-run configuration)
   app.put('/api/profiles/:profileId/scripts', async (req: Request, res: Response) => {
     try {
-      const { profileId } = req.params;
+      const profileId = parseInt(req.params.profileId);
       const { autoRunScripts } = req.body;
 
       if (!Array.isArray(autoRunScripts)) {
@@ -878,7 +909,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Get scripts configuration for instance
   app.get('/api/profiles/:profileId/scripts', (req: Request, res: Response) => {
     try {
-      const { profileId } = req.params;
+      const profileId = parseInt(req.params.profileId);
       const profile = profileManager.getProfile(profileId);
 
       if (!profile) {
@@ -896,7 +927,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Add a script to instance
   app.post('/api/profiles/:profileId/scripts', async (req: Request, res: Response) => {
     try {
-      const { profileId } = req.params;
+      const profileId = parseInt(req.params.profileId);
       const { scriptName, scriptData } = req.body;
 
       if (!scriptName) {
@@ -939,7 +970,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Remove a script from instance
   app.delete('/api/profiles/:profileId/scripts/:scriptName', async (req: Request, res: Response) => {
     try {
-      const { profileId, scriptName } = req.params;
+      const profileId = parseInt(req.params.profileId);
+      const { scriptName } = req.params;
 
       const profile = profileManager.getProfile(profileId);
       if (!profile) {
@@ -965,6 +997,174 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error removing profile script:', error);
       res.status(500).json({ error: 'Failed to remove profile script' });
+    }
+  });
+
+  // ============================================
+  // Profile Script Management (for UI Script Editor)
+  // ============================================
+
+  // Get script content for profile
+  app.get('/api/profiles/:profileId/script', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Get script content from profile metadata or return empty
+      const scriptContent = profile.metadata?.scriptContent || '';
+      res.json({ content: scriptContent });
+    } catch (error) {
+      logger.error('Error getting profile script:', error);
+      res.status(500).json({ error: 'Failed to get profile script' });
+    }
+  });
+
+  // Create/Update script content for profile
+  app.post('/api/profiles/:profileId/script', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const { content } = req.body;
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Save script content to profile metadata
+      const updatedProfile = await profileManager.updateProfile(profileId, {
+        metadata: {
+          ...profile.metadata,
+          scriptContent: content || ''
+        }
+      });
+
+      logger.info(`Created script for profile ${profile.name}`);
+      res.json({ success: true, content, profile: updatedProfile });
+    } catch (error) {
+      logger.error('Error creating profile script:', error);
+      res.status(500).json({ error: 'Failed to create profile script' });
+    }
+  });
+
+  // Update script content for profile
+  app.put('/api/profiles/:profileId/script', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const { content } = req.body;
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Update script content in profile metadata
+      const updatedProfile = await profileManager.updateProfile(profileId, {
+        metadata: {
+          ...profile.metadata,
+          scriptContent: content || ''
+        }
+      });
+
+      logger.info(`Updated script for profile ${profile.name}`);
+      res.json({ success: true, content, profile: updatedProfile });
+    } catch (error) {
+      logger.error('Error updating profile script:', error);
+      res.status(500).json({ error: 'Failed to update profile script' });
+    }
+  });
+
+  // ============================================
+  // Profile Logs and Output
+  // ============================================
+
+  // Get log content for profile
+  app.get('/api/profiles/:profileId/log', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Get log content from profile execution history
+      const logContent = profile.metadata?.lastLog || 'No log available';
+      res.json({ content: logContent });
+    } catch (error) {
+      logger.error('Error getting profile log:', error);
+      res.status(500).json({ error: 'Failed to get profile log' });
+    }
+  });
+
+  // Get output files for profile
+  app.get('/api/profiles/:profileId/output', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Get output files from profile metadata
+      const outputFiles = profile.metadata?.outputFiles || [];
+      const outputPath = profile.metadata?.outputPath || `output/${profileId}`;
+
+      res.json({
+        files: outputFiles,
+        path: outputPath
+      });
+    } catch (error) {
+      logger.error('Error getting profile output:', error);
+      res.status(500).json({ error: 'Failed to get profile output' });
+    }
+  });
+
+  // Download output file
+  app.get('/api/profiles/:profileId/output/:filename', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const { filename } = req.params;
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // In a real implementation, serve the actual file
+      // For now, return a mock response
+      res.status(404).json({ error: 'File download not implemented yet' });
+    } catch (error) {
+      logger.error('Error downloading output file:', error);
+      res.status(500).json({ error: 'Failed to download output file' });
+    }
+  });
+
+  // ============================================
+  // Open Browser with Profile
+  // ============================================
+
+  app.post('/api/profiles/:id/open-browser', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.id);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Launch the instance (activate profile)
+      await profileManager.activateProfile(profileId);
+
+      logger.info(`Opened browser for profile ${profile.name}`);
+      res.json({ success: true, message: 'Browser opened successfully' });
+    } catch (error) {
+      logger.error('Error opening browser:', error);
+      res.status(500).json({ error: 'Failed to open browser' });
     }
   });
 }

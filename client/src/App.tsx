@@ -5,6 +5,7 @@ import { Toaster } from './components/ui/toaster';
 import { TaskCenterTab } from './components/tasks/TaskCenterTab';
 import { InstancesTab } from './components/instances/InstancesTab';
 import { SettingsTab } from './components/settings/SettingsTab';
+import AutomationBuilderMobile from './components/automation/AutomationBuilderMobile';
 import {
   LayoutDashboard,
   Smartphone,
@@ -13,7 +14,8 @@ import {
   Menu,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Workflow
 } from 'lucide-react';
 import './styles/mobile.css';
 
@@ -25,6 +27,7 @@ export default function App() {
   const tabs = [
     { id: 'tasks', name: 'Task Center', icon: Download },
     { id: 'instances', name: 'Instances', icon: Smartphone },
+    { id: 'automation', name: 'Automation', icon: Workflow },
     { id: 'settings', name: 'Settings', icon: Settings },
   ];
 
@@ -133,6 +136,7 @@ export default function App() {
       <div className="flex-1 overflow-auto">
         {activeTab === 'tasks' && <TaskCenterTab />}
         {activeTab === 'instances' && <InstancesTab />}
+        {activeTab === 'automation' && <AutomationBuilderMobile />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>

@@ -5,7 +5,7 @@ import path from 'path';
 import { APPS_CONFIG, getAutoInstallApps } from '../config/apps.config.js';
 
 export interface MobileProfile {
-  id: string;
+  id: number;
   name: string;
   instanceName: string;
   port: number;
@@ -51,15 +51,16 @@ export interface MobileProfile {
 }
 
 export class ProfileManager {
-  private profiles: Map<string, MobileProfile> = new Map();
+  private profiles: Map<number, MobileProfile> = new Map();
   private controller: LDPlayerController;
+  private nextProfileId: number = 1;
   private profilesPath: string;
   private scriptExecutor: any; // Will be injected later
 
   constructor(controller: LDPlayerController) {
     this.controller = controller;
     this.profilesPath = path.join(process.cwd(), 'data', 'profiles');
-    this.initializeStorage();
+    // Don't call async initialization in constructor
   }
 
   // Inject script executor (to avoid circular dependency)
@@ -67,12 +68,15 @@ export class ProfileManager {
     this.scriptExecutor = scriptExecutor;
   }
 
-  private async initializeStorage(): Promise<void> {
+  // Public async initialization method - must be called before using ProfileManager
+  async initialize(): Promise<void> {
     try {
       await fs.mkdir(this.profilesPath, { recursive: true });
       await this.loadProfiles();
+      logger.info('ProfileManager initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize profile storage:', error);
+      throw error;
     }
   }
 
@@ -82,10 +86,17 @@ export class ProfileManager {
       const files = await fs.readdir(this.profilesPath);
 
       for (const file of files) {
-        if (file.endsWith('.json')) {
+        // Only load files with numeric names (e.g., 1.json, 2.json)
+        if (file.endsWith('.json') && /^\d+\.json$/.test(file)) {
           const profilePath = path.join(this.profilesPath, file);
           const data = await fs.readFile(profilePath, 'utf-8');
           const profile = JSON.parse(data) as MobileProfile;
+
+          // Validate profile has numeric ID
+          if (typeof profile.id !== 'number' || isNaN(profile.id) || profile.id === null) {
+            logger.warn(`Skipping invalid profile file: ${file} (invalid ID: ${profile.id})`);
+            continue;
+          }
 
           // Convert date strings back to Date objects
           profile.createdAt = new Date(profile.createdAt);
@@ -97,7 +108,15 @@ export class ProfileManager {
         }
       }
 
-      logger.info(`Loaded ${this.profiles.size} profiles`);
+      // Update nextProfileId to be max(existing IDs) + 1
+      if (this.profiles.size > 0) {
+        const maxId = Math.max(...Array.from(this.profiles.keys()));
+        this.nextProfileId = maxId + 1;
+      } else {
+        this.nextProfileId = 1;
+      }
+
+      logger.info(`Loaded ${this.profiles.size} profiles, next ID will be ${this.nextProfileId}`);
     } catch (error) {
       logger.error('Failed to load profiles:', error);
     }
@@ -117,7 +136,7 @@ export class ProfileManager {
 
   // Create new profile
   async createProfile(config: {
-    name: string;
+    name?: string;
     settings?: Partial<MobileProfile['settings']>;
     device?: Partial<MobileProfile['device']>;
     network?: Partial<MobileProfile['network']>;
@@ -125,8 +144,10 @@ export class ProfileManager {
   }): Promise<MobileProfile> {
     try {
       const profileId = this.generateProfileId();
-      // Use user's name directly as instance name (LDPlayer doesn't like long names)
-      const instanceName = config.name.replace(/[^a-zA-Z0-9-_]/g, '_');
+      // Use provided name or generate default
+      const displayName = config.name || `Instance_${profileId}`;
+      // Instance name for LDPlayer (sanitized)
+      const instanceName = displayName.replace(/[^a-zA-Z0-9-_]/g, '_');
       const port = 5555 + this.profiles.size * 2;
 
       // Default settings
@@ -141,7 +162,7 @@ export class ProfileManager {
       // Create profile object
       const profile: MobileProfile = {
         id: profileId,
-        name: config.name,
+        name: displayName, // Use provided name
         instanceName,
         port,
         settings: { ...defaultSettings, ...config.settings },
@@ -174,7 +195,30 @@ export class ProfileManager {
   }
 
   // Activate profile (launch instance)
-  async activateProfile(profileId: string): Promise<void> {
+  // Launch instance only (without installing apps or running scripts)
+  async launchInstanceOnly(profileId: number): Promise<void> {
+    try {
+      const profile = this.profiles.get(profileId);
+      if (!profile) {
+        throw new Error(`Profile ${profileId} not found`);
+      }
+
+      // Just launch the instance
+      await this.controller.launchInstance(profile.instanceName);
+
+      // Update profile status
+      profile.status = 'active';
+      profile.lastUsed = new Date();
+      await this.saveProfile(profile);
+
+      logger.info(`Launched instance only: ${profile.name}`);
+    } catch (error) {
+      logger.error(`Failed to launch instance ${profileId}:`, error);
+      throw error;
+    }
+  }
+
+  async activateProfile(profileId: number): Promise<void> {
     try {
       const profile = this.profiles.get(profileId);
       if (!profile) {
@@ -240,7 +284,7 @@ export class ProfileManager {
   }
 
   // Deactivate profile (stop instance)
-  async deactivateProfile(profileId: string): Promise<void> {
+  async deactivateProfile(profileId: number): Promise<void> {
     try {
       const profile = this.profiles.get(profileId);
       if (!profile) {
@@ -262,7 +306,7 @@ export class ProfileManager {
   }
 
   // Delete profile
-  async deleteProfile(profileId: string): Promise<void> {
+  async deleteProfile(profileId: number): Promise<void> {
     try {
       const profile = this.profiles.get(profileId);
       if (!profile) {
@@ -287,15 +331,77 @@ export class ProfileManager {
   }
 
   // Update profile
-  async updateProfile(profileId: string, updates: Partial<MobileProfile>): Promise<MobileProfile> {
+  async updateProfile(profileId: number, updates: Partial<MobileProfile>): Promise<MobileProfile> {
     try {
       const profile = this.profiles.get(profileId);
       if (!profile) {
         throw new Error(`Profile ${profileId} not found`);
       }
 
+      // Check if hardware settings are being updated
+      const settingsChanged = updates.settings && (
+        updates.settings.resolution !== profile.settings?.resolution ||
+        updates.settings.cpu !== profile.settings?.cpu ||
+        updates.settings.memory !== profile.settings?.memory
+      );
+
       // Merge updates
       Object.assign(profile, updates);
+
+      // Apply hardware changes to instance if settings changed
+      if (settingsChanged && profile.settings) {
+        logger.info(`Updating instance hardware settings for ${profile.name}...`);
+        try {
+          // Get instance from controller
+          await this.controller.getAllInstancesFromLDConsole();
+          const instance = this.controller.getInstance(profile.instanceName);
+
+          if (instance) {
+            // Instance must be stopped to modify settings
+            const wasRunning = profile.status === 'active';
+            if (wasRunning) {
+              logger.info(`Stopping instance ${profile.instanceName} to apply hardware settings...`);
+              await this.controller.stopInstance(profile.instanceName);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+
+            // Build modify command
+            const modifyArgs = [];
+            if (profile.settings.resolution) {
+              // ldconsole requires format: width,height,dpi
+              const dpi = profile.settings.dpi || 240; // Default DPI
+              modifyArgs.push(`--resolution ${profile.settings.resolution},${dpi}`);
+            }
+            if (profile.settings.cpu) {
+              modifyArgs.push(`--cpu ${profile.settings.cpu}`);
+            }
+            if (profile.settings.memory) {
+              modifyArgs.push(`--memory ${profile.settings.memory}`);
+            }
+
+            // Execute modify command via ldconsole
+            if (modifyArgs.length > 0) {
+              const ldconsolePath = process.env.LDCONSOLE_PATH || 'ldconsole.exe';
+              const { execSync } = await import('child_process');
+              const modifyCmd = `"${ldconsolePath}" modify --index ${instance.index} ${modifyArgs.join(' ')}`;
+              logger.info(`Executing: ${modifyCmd}`);
+              execSync(modifyCmd);
+              logger.info(`Instance hardware settings updated successfully`);
+            }
+
+            // Restart instance if it was running
+            if (wasRunning) {
+              logger.info(`Restarting instance ${profile.instanceName}...`);
+              await this.controller.launchInstance(profile.instanceName);
+            }
+          } else {
+            logger.warn(`Instance ${profile.instanceName} not found in LDPlayer, skipping hardware update`);
+          }
+        } catch (modifyError) {
+          logger.warn(`Failed to apply hardware settings to instance: ${modifyError}`);
+          // Continue anyway - settings are saved to profile
+        }
+      }
 
       // Save updated profile
       await this.saveProfile(profile);
@@ -309,7 +415,7 @@ export class ProfileManager {
   }
 
   // Get profile by ID
-  getProfile(profileId: string): MobileProfile | undefined {
+  getProfile(profileId: number): MobileProfile | undefined {
     return this.profiles.get(profileId);
   }
 
@@ -324,7 +430,7 @@ export class ProfileManager {
   }
 
   // Batch operations
-  async activateMultipleProfiles(profileIds: string[]): Promise<void> {
+  async activateMultipleProfiles(profileIds: number[]): Promise<void> {
     for (const profileId of profileIds) {
       await this.activateProfile(profileId);
       // Add delay between activations
@@ -339,8 +445,44 @@ export class ProfileManager {
     }
   }
 
+  // Refresh all profile statuses from LDPlayer
+  async refreshAllProfileStatuses(): Promise<void> {
+    try {
+      logger.info('Refreshing all profile statuses from LDPlayer...');
+
+      // Get running instances from LDPlayer
+      const { execSync } = await import('child_process');
+      const ldconsolePath = process.env.LDCONSOLE_PATH || 'ldconsole.exe';
+      const result = execSync(`"${ldconsolePath}" runninglist`).toString();
+      const runningInstances = new Set(
+        result.split('\n')
+          .map(line => line.trim())
+          .filter(line => line && line !== '')
+          .map(line => line.split(',')[1]) // Get instance name
+          .filter(name => name)
+      );
+
+      // Update all profiles based on running status
+      for (const profile of this.profiles.values()) {
+        const isRunning = runningInstances.has(profile.instanceName);
+        const newStatus = isRunning ? 'active' : 'inactive';
+
+        if (profile.status !== newStatus) {
+          profile.status = newStatus;
+          await this.saveProfile(profile);
+          logger.info(`Updated profile ${profile.name} status to ${newStatus}`);
+        }
+      }
+
+      logger.info('Profile statuses refreshed successfully');
+    } catch (error) {
+      logger.error('Failed to refresh profile statuses:', error);
+      throw error;
+    }
+  }
+
   // Clone profile (including apps)
-  async cloneProfile(profileId: string, newName: string, options?: {
+  async cloneProfile(profileId: number, newName: string, options?: {
     copyApps?: boolean;
     launchAndSetup?: boolean;
   }): Promise<MobileProfile> {
@@ -433,7 +575,7 @@ export class ProfileManager {
   }
 
   // Import/Export profiles
-  async exportProfile(profileId: string, exportPath: string): Promise<void> {
+  async exportProfile(profileId: number, exportPath: string): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) {
       throw new Error(`Profile ${profileId} not found`);
@@ -469,7 +611,7 @@ export class ProfileManager {
   }
 
   // Install Twitter app on profile
-  async installTwitterApp(profileId: string): Promise<void> {
+  async installTwitterApp(profileId: number): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) {
       throw new Error(`Profile ${profileId} not found`);
@@ -502,7 +644,7 @@ export class ProfileManager {
   }
 
   // Install multiple apps at once
-  async installApps(profileId: string, apps: Array<{ name: string; apkPath: string; packageName: string }>): Promise<void> {
+  async installApps(profileId: number, apps: Array<{ name: string; apkPath: string; packageName: string }>): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) {
       throw new Error(`Profile ${profileId} not found`);
@@ -528,7 +670,7 @@ export class ProfileManager {
   }
 
   // Auto-install apps from config
-  private async autoInstallApps(profileId: string): Promise<void> {
+  private async autoInstallApps(profileId: number): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) return;
 
@@ -577,9 +719,18 @@ export class ProfileManager {
           continue;
         }
 
-        // Install APK
+        // Install APK using ldconsole (more reliable than ADB)
         logger.info(`Installing ${appConfig.name} from ${apkPath}...`);
-        await this.controller.installAPK(profile.port, apkPath);
+
+        // Refresh instance list from ldconsole and get instance index
+        await this.controller.getAllInstancesFromLDConsole();
+        const instance = this.controller.getInstance(profile.instanceName);
+        if (!instance) {
+          logger.warn(`Instance ${profile.instanceName} not found, skipping ${appConfig.name}`);
+          continue;
+        }
+
+        await this.controller.installAppViaLDConsole(instance.index, apkPath);
 
         // Update profile
         profile.apps[appConfig.name.toLowerCase()] = {
@@ -597,7 +748,7 @@ export class ProfileManager {
   }
 
   // Install selected apps from filenames
-  private async installSelectedApps(profileId: string, selectedAppsFilenames: string[]): Promise<void> {
+  private async installSelectedApps(profileId: number, selectedAppsFilenames: string[]): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) return;
 
@@ -627,10 +778,19 @@ export class ProfileManager {
           continue;
         }
 
-        // Install APK
+        // Install APK using ldconsole (more reliable than ADB)
         logger.info(`Installing ${appInfo.name} from ${appInfo.filePath}...`);
         const apkPath = path.resolve(process.cwd(), appInfo.filePath);
-        await this.controller.installAPK(profile.port, apkPath);
+
+        // Refresh instance list from ldconsole and get instance index
+        await this.controller.getAllInstancesFromLDConsole();
+        const instance = this.controller.getInstance(profile.instanceName);
+        if (!instance) {
+          logger.warn(`Instance ${profile.instanceName} not found, skipping ${appInfo.name}`);
+          continue;
+        }
+
+        await this.controller.installAppViaLDConsole(instance.index, apkPath);
 
         // Update profile
         profile.apps[appInfo.name.toLowerCase()] = {
@@ -648,12 +808,12 @@ export class ProfileManager {
   }
 
   // Helper method to generate unique profile ID
-  private generateProfileId(): string {
-    return `profile_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  private generateProfileId(): number {
+    return this.nextProfileId++;
   }
 
   // Auto-launch app after instance activation
-  private async autoLaunchApp(profileId: string): Promise<void> {
+  private async autoLaunchApp(profileId: number): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) return;
 
@@ -692,7 +852,7 @@ export class ProfileManager {
   }
 
   // Execute auto-run scripts after instance activation
-  private async executeAutoRunScripts(profileId: string, scripts: Array<{scriptName: string; scriptData: Record<string, any>}>): Promise<void> {
+  private async executeAutoRunScripts(profileId: number, scripts: Array<{scriptName: string; scriptData: Record<string, any>}>): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile || !this.scriptExecutor) return;
 
@@ -819,7 +979,7 @@ export class ProfileManager {
   }
 
   // Install app on profile using ldconsole
-  async installAppOnProfile(profileId: string, apkFileName: string): Promise<void> {
+  async installAppOnProfile(profileId: number, apkFileName: string): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) {
       throw new Error(`Profile ${profileId} not found`);
@@ -828,6 +988,9 @@ export class ProfileManager {
     try {
       const apkPath = path.resolve(process.cwd(), 'apks', apkFileName);
       await fs.access(apkPath); // Check if file exists
+
+      // Refresh instance list from ldconsole first
+      await this.controller.getAllInstancesFromLDConsole();
 
       // Get instance index
       const instance = this.controller.getInstance(profile.instanceName);
@@ -846,7 +1009,7 @@ export class ProfileManager {
   }
 
   // Launch app on profile using ldconsole
-  async launchAppOnProfile(profileId: string, packageName: string): Promise<void> {
+  async launchAppOnProfile(profileId: number, packageName: string): Promise<void> {
     const profile = this.profiles.get(profileId);
     if (!profile) {
       throw new Error(`Profile ${profileId} not found`);

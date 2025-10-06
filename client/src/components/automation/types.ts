@@ -1,5 +1,7 @@
 // Node types
-export type NodeKind = "GoTo" | "Type" | "Click" | "MultiType" | "If" | "Else" | "Wait" | "Sleep" | "For" | "While" | "Variable" | "Extract" | "Navigation" | "SwitchFrame" | "SwitchTab" | "ScrollTo" | "Select" | "Loop" | "EndLoop" | "DataProcess" | "Log" | "HttpRequest" | "AI" | "CaptchaSolver";
+export type NodeKind = "GoTo" | "Type" | "Click" | "MultiType" | "If" | "Else" | "Wait" | "Sleep" | "For" | "While" | "Variable" | "Extract" | "Navigation" | "SwitchFrame" | "SwitchTab" | "ScrollTo" | "Select" | "Loop" | "EndLoop" | "DataProcess" | "Log" | "HttpRequest" | "AI" | "CaptchaSolver" |
+  // Mobile automation nodes
+  "MobileTap" | "MobileSwipe" | "MobileScroll" | "MobileLongPress" | "MobileDoubleTap" | "MobilePinch" | "MobileBack" | "MobileHome" | "MobileTypeText" | "MobileWait" | "MobileScreenshot" | "MobileOpenApp";
 
 // Cấu hình của từng node
 export type NodeData = {
@@ -96,6 +98,51 @@ export type NodeData = {
     captchaTimeout?: number;
     captchaAutoDetect?: boolean;
     captchaAutoSolve?: boolean;
+    // Mobile automation
+    // MobileTap
+    tapX?: number;
+    tapY?: number;
+    tapOffsetRadius?: number;
+    tapBeforeDelay?: [number, number];
+    tapAfterDelay?: [number, number];
+    // MobileSwipe
+    swipeX1?: number;
+    swipeY1?: number;
+    swipeX2?: number;
+    swipeY2?: number;
+    swipeDuration?: number;
+    swipeCurve?: boolean;
+    swipeSteps?: number;
+    // MobileScroll
+    scrollDirection?: "up" | "down";
+    scrollDistance?: number;
+    scrollDuration?: number;
+    scrollRandomize?: boolean;
+    // MobileLongPress
+    longPressX?: number;
+    longPressY?: number;
+    longPressDuration?: number;
+    // MobileDoubleTap
+    doubleTapX?: number;
+    doubleTapY?: number;
+    // MobilePinch
+    pinchZoom?: "in" | "out";
+    pinchCenterX?: number;
+    pinchCenterY?: number;
+    // MobileTypeText
+    mobileText?: string;
+    mobileFieldX?: number;
+    mobileFieldY?: number;
+    mobileClearFirst?: boolean;
+    mobileMinCharDelay?: number;
+    mobileMaxCharDelay?: number;
+    // MobileWait
+    mobileWaitTimeout?: number;
+    // MobileScreenshot
+    screenshotPath?: string;
+    // MobileOpenApp
+    appPackageName?: string;
+    appName?: string;
   };
 };
 

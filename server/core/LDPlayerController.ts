@@ -160,12 +160,62 @@ export class LDPlayerController {
 
   async cloneInstance(sourceName: string, targetName: string): Promise<LDPlayerInstance> {
     try {
-      await execAsync(`"${this.ldConsolePath}" copy --name "${targetName}" --from "${sourceName}"`);
-
-      // Get the actual index from ldconsole list2
+      // Check if target instance already exists (error code 19 = instance name exists)
       const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
-      const lines = listResult.stdout.trim().split('\n');
-      let instanceIndex = this.instances.size;
+      const existingInstances = listResult.stdout.trim().split('\n');
+      const targetExists = existingInstances.some(line => {
+        const parts = line.split(',');
+        return parts[1] === targetName;
+      });
+
+      if (targetExists) {
+        logger.warn(`Target instance ${targetName} already exists, removing it first...`);
+        try {
+          await this.removeInstance(targetName);
+          // Wait for removal to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (removeErr) {
+          logger.error(`Failed to remove existing instance ${targetName}:`, removeErr);
+          throw new Error(`Instance name "${targetName}" already exists and could not be removed`);
+        }
+      }
+
+      // Check if source instance is running
+      let wasRunning = false;
+      try {
+        const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`);
+        wasRunning = runningListResult.stdout.includes(sourceName);
+      } catch (err) {
+        logger.warn('Failed to check running instances, assuming instance is stopped');
+      }
+
+      // Stop source instance if it's running (ldconsole copy requires instance to be stopped)
+      if (wasRunning) {
+        logger.info(`Source instance ${sourceName} is running, stopping it temporarily for cloning...`);
+        await this.stopInstance(sourceName);
+        // Wait a bit for instance to fully stop
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Perform the clone
+      // Note: ldconsole copy may return non-zero exit code even when successful
+      try {
+        await execAsync(`"${this.ldConsolePath}" copy --name "${targetName}" --from "${sourceName}"`);
+      } catch (copyError: any) {
+        // Check if instance was actually created despite error code
+        logger.warn(`Copy command returned error code ${copyError.code}, checking if instance was created...`);
+      }
+
+      // Restart source instance if it was running
+      if (wasRunning) {
+        logger.info(`Restarting source instance ${sourceName}...`);
+        await this.launchInstance(sourceName);
+      }
+
+      // Get the actual index from ldconsole list2 and verify clone succeeded
+      const newListResult = await execAsync(`"${this.ldConsolePath}" list2`);
+      const lines = newListResult.stdout.trim().split('\n');
+      let instanceIndex = -1;
 
       for (const line of lines) {
         const parts = line.split(',');
@@ -173,6 +223,11 @@ export class LDPlayerController {
           instanceIndex = parseInt(parts[0], 10);
           break;
         }
+      }
+
+      // Verify instance was created
+      if (instanceIndex === -1) {
+        throw new Error(`Failed to clone instance: ${targetName} not found in instance list after copy operation`);
       }
 
       // Register the cloned instance
@@ -184,7 +239,7 @@ export class LDPlayerController {
       };
       this.instances.set(targetName, clonedInstance);
 
-      logger.info(`Cloned instance ${sourceName} to ${targetName} (index: ${instanceIndex})`);
+      logger.info(`Successfully cloned instance ${sourceName} to ${targetName} (index: ${instanceIndex})`);
       return clonedInstance;
     } catch (error) {
       logger.error(`Failed to clone instance from ${sourceName} to ${targetName}:`, error);

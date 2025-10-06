@@ -13,9 +13,11 @@ import ReactFlow, {
   useReactFlow,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import { Plus, Smartphone } from "lucide-react";
+import { Smartphone } from "lucide-react";
 import { useMobileLDPlayer } from "../../hooks/use-mobile-ldplayer";
 import { MobileNodeSelector } from "./MobileNodeSelector";
+import { MobileNodeEditor } from "./MobileNodeEditor";
+import { NodePalette } from "./NodePalette";
 import { NodeData, NodeKind } from "./types";
 import { generateNodeId } from "./utils";
 import { PALETTE } from "./PaletteConfig";
@@ -26,7 +28,10 @@ function AutomationBuilderInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [showMobileSelector, setShowMobileSelector] = useState(false);
+  const [showNodeEditor, setShowNodeEditor] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeData, setSelectedNodeData] = useState<NodeData | null>(null);
+  const [draggedNodeKind, setDraggedNodeKind] = useState<NodeKind | null>(null);
 
   // Handle connections between nodes
   const onConnect = useCallback(
@@ -80,46 +85,125 @@ function AutomationBuilderInner() {
     [rf, screenSize, setNodes]
   );
 
-  // Handle canvas tap (mobile)
-  const handleCanvasTap = useCallback((event: React.MouseEvent | React.TouchEvent) => {
-    if (isMobile) {
-      // On mobile, show node selector instead of drag-drop
-      setShowMobileSelector(true);
-    }
-  }, [isMobile]);
+  // Handle canvas tap (mobile) - Reserved for future use
+  // const handleCanvasTap = useCallback((event: React.MouseEvent | React.TouchEvent) => {
+  //   if (isMobile) {
+  //     // On mobile, show node selector instead of drag-drop
+  //     setShowMobileSelector(true);
+  //   }
+  // }, [isMobile]);
+
+  // Handle node click to open editor
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNodeId(node.id);
+    setSelectedNodeData(node.data as NodeData);
+    setShowNodeEditor(true);
+  }, []);
+
+  // Handle save node config
+  const handleSaveNodeConfig = useCallback((updatedData: NodeData) => {
+    if (!selectedNodeId) return;
+
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === selectedNodeId) {
+          return {
+            ...node,
+            data: updatedData,
+          };
+        }
+        return node;
+      })
+    );
+  }, [selectedNodeId, setNodes]);
+
+  // Handle drag start from palette
+  const handleDragStart = useCallback((event: React.DragEvent, nodeKind: NodeKind) => {
+    setDraggedNodeKind(nodeKind);
+    event.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  // Handle drag over canvas
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  // Handle drop on canvas
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      if (!draggedNodeKind) return;
+
+      const def = PALETTE.find((p) => p.kind === draggedNodeKind);
+      if (!def) return;
+
+      // Get the drop position relative to the ReactFlow canvas
+      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
+      const viewport = rf.getViewport();
+
+      const x = (event.clientX - reactFlowBounds.left - viewport.x) / viewport.zoom;
+      const y = (event.clientY - reactFlowBounds.top - viewport.y) / viewport.zoom;
+
+      const id = generateNodeId(draggedNodeKind);
+
+      setNodes((nds) =>
+        nds.concat({
+          id,
+          type: "default",
+          position: { x: x - 75, y: y - 25 }, // Center the node on cursor
+          data: {
+            label: def.label,
+            kind: def.kind,
+            config: def.defaultConfig,
+          } as NodeData,
+        })
+      );
+
+      setDraggedNodeKind(null);
+    },
+    [draggedNodeKind, rf, setNodes]
+  );
 
   return (
-    <div className="h-full w-full relative">
-      {/* ReactFlow Canvas */}
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-        fitView
-        panOnScroll={true}
-        panOnDrag={true}
-        zoomOnScroll={true}
-        minZoom={0.5}
-        maxZoom={1.5}
-      >
-        <Background gap={16} />
-        <Controls showInteractive={false} />
-        {!isMobile && <MiniMap />}
-      </ReactFlow>
+    <div className="h-full w-full flex">
+      {/* Node Palette Sidebar */}
+      <NodePalette palette={PALETTE} onDragStart={handleDragStart} />
 
-      {/* Mobile FAB (Floating Action Button) */}
-      {isMobile && (
-        <button
-          onClick={() => setShowMobileSelector(true)}
-          className="fixed bottom-6 right-6 w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 text-white shadow-2xl flex items-center justify-center z-50 active:scale-95 transition-transform"
-          style={{ touchAction: 'manipulation' }}
+      {/* ReactFlow Canvas */}
+      <div
+        className="flex-1 relative"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeClick={handleNodeClick}
+          fitView
+          panOnScroll={true}
+          panOnDrag={true}
+          zoomOnScroll={true}
+          minZoom={0.5}
+          maxZoom={1.5}
         >
-          <Plus className="w-8 h-8" />
-        </button>
-      )}
+          <Background gap={16} />
+          <Controls showInteractive={false} />
+          {!isMobile && <MiniMap />}
+        </ReactFlow>
+
+        {/* Info Badge */}
+        <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 z-40">
+          <Smartphone className="w-4 h-4 text-blue-500" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {isLDPlayer ? "LDPlayer" : isMobile ? "Mobile" : "Desktop"} • {nodes.length} nodes
+          </span>
+        </div>
+      </div>
 
       {/* Mobile Node Selector */}
       <MobileNodeSelector
@@ -129,13 +213,13 @@ function AutomationBuilderInner() {
         palette={PALETTE}
       />
 
-      {/* Info Badge */}
-      <div className="fixed top-4 left-4 bg-white dark:bg-gray-800 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 z-40">
-        <Smartphone className="w-4 h-4 text-blue-500" />
-        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {isLDPlayer ? "LDPlayer" : isMobile ? "Mobile" : "Desktop"} • {nodes.length} nodes
-        </span>
-      </div>
+      {/* Mobile Node Editor */}
+      <MobileNodeEditor
+        isOpen={showNodeEditor}
+        onClose={() => setShowNodeEditor(false)}
+        nodeData={selectedNodeData}
+        onSave={handleSaveNodeConfig}
+      />
     </div>
   );
 }

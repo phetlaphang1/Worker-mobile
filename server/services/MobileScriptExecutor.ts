@@ -5,7 +5,7 @@ import { logger } from '../utils/logger.js';
 
 export interface ScriptTask {
   id: string;
-  profileId: string;
+  profileId: number;
   scriptType: 'twitter' | 'instagram' | 'tiktok' | 'custom';
   scriptName: string;
   scriptData: Record<string, any>;

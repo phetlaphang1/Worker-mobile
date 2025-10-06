@@ -95,38 +95,29 @@ export const useInstanceMutations = () => {
   });
 
   const duplicateProfileMutation = useMutation({
-    mutationFn: async (profile: Profile) => {
-      // Create duplicate profile data with modified name
-      const duplicateData = {
-        name: `${profile.name} - Copy`,
-        description: profile.description || "",
-        browser: profile.browser,
-        userAgent: profile.userAgent,
-        customUserAgent: profile.customUserAgent || "",
-        viewportWidth: profile.viewportWidth,
-        viewportHeight: profile.viewportHeight,
-        timezone: profile.timezone,
-        language: profile.language,
-        useProxy: profile.useProxy,
-        proxyType: profile.proxyType,
-        proxyHost: profile.proxyHost || "",
-        proxyPort: profile.proxyPort || "",
-        proxyUsername: profile.proxyUsername || "",
-        proxyPassword: profile.proxyPassword || "",
-        customField: profile.customField || null,
-        isHeadless: profile.isHeadless || false,
-        isIncognito: profile.isIncognito || false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
+    mutationFn: async ({ profile, newName, copyApps }: { profile: Profile; newName: string; copyApps: boolean }) => {
+      // Use clone API endpoint
+      const response = await fetch(`http://localhost:5050/api/profiles/${profile.id}/clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          newName,
+          copyApps,
+          launchAndSetup: false // Don't auto-launch
+        })
+      });
 
-      return api.profiles.create(duplicateData);
+      if (!response.ok) {
+        throw new Error('Failed to clone instance');
+      }
+
+      return response.json();
     },
-    onSuccess: (newProfile) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
       toast({
-        title: "Instance Duplicated",
-        description: `Created "${newProfile.name}" with copied configuration`,
+        title: "Instance Cloned",
+        description: `Created "${data.profile.name}" successfully`,
       });
     },
     onError: (error: any) => {
@@ -165,7 +156,7 @@ export const useInstanceMutations = () => {
       console.log("Instance Stop Response: ", result);
       return result ;
     },
-    onSuccess: (data, params) => {
+    onSuccess: (_data, params) => {
       toast({
         title: `Instance [${params.profileId}] Stopped`,
         description: `Instance execution stopped successfully`,
@@ -192,32 +183,9 @@ export const useInstanceMutations = () => {
   });
 
   const createNewProfileMutation = useMutation({
-    mutationFn: (profiles: Profile[]) => {
-      // Get the next profile ID by finding the highest existing ID + 1
-      const maxId = profiles.length > 0 ? Math.max(...profiles.map(p => p.id)) : 0;
-      const nextId = maxId + 1;
-      return api.profiles.create({
-        name: `Instance ${nextId}`,
-        description: `Automatically generated instance ${nextId}`,
-        browser: "chrome-windows",
-        isHeadless:false,
-        isIncognito:false,
-        userAgent: "",
-        customUserAgent: "",
-        viewportWidth: 1280,
-        viewportHeight: 720,
-        timezone: "America/New_York",
-        language: "en-US",
-        useProxy: false,
-        proxyType: "http",
-        proxyHost: "",
-        proxyPort: "",
-        proxyUsername: "",
-        proxyPassword: "",
-        status: "READY",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+    mutationFn: (config: any) => {
+      // Use config from NewInstanceModal
+      return api.profiles.create(config);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
@@ -272,26 +240,53 @@ export const useInstanceMutations = () => {
     },
   });
 
-  const openBrowserMutation = useMutation({
+  const launchInstanceOnlyMutation = useMutation({
     mutationFn: async (profile: Profile) => {
-      const response = await fetch(`http://localhost:5050/api/profiles/${profile.id}/open-browser`, {
+      const response = await fetch(`http://localhost:5050/api/profiles/${profile.id}/launch-only`, {
         method: 'POST'
       });
       if (!response.ok) {
-        throw new Error('Failed to open browser with instance');
+        throw new Error('Failed to launch instance');
       }
       return { profileId: profile.id };
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
       toast({
-        title: "Browser Opened",
-        description: "Chrome browser opened with instance configuration",
+        title: "Instance Launched",
+        description: "Instance launched successfully (without running script)",
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to Open Browser",
-        description: error.message || "Could not open Chrome browser",
+        title: "Failed to Launch Instance",
+        description: error.message || "Could not launch instance",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const refreshStatusMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('http://localhost:5050/api/profiles/refresh-status', {
+        method: 'POST'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to refresh status');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
+      toast({
+        title: "Statuses Refreshed",
+        description: "All instance statuses have been synced with LDPlayer",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Refresh Failed",
+        description: error.message || "Failed to refresh statuses",
         variant: "destructive",
       });
     },
@@ -304,6 +299,7 @@ export const useInstanceMutations = () => {
     stopProfileMutation,
     createNewProfileMutation,
     updateScriptMutation,
-    openBrowserMutation
+    launchInstanceOnlyMutation,
+    refreshStatusMutation
   };
 };

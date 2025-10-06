@@ -186,12 +186,16 @@ export default function ProfileDetailsModal({
     proxyUsername: profileData?.proxyUsername || "",
     proxyPassword: profileData?.proxyPassword || "",
     customField: profileData?.customField
-      ? (typeof profileData.customField === 'string' 
+      ? (typeof profileData.customField === 'string'
           ? profileData.customField.replace(/\\n/g, '\n').replace(/\\"/g, '"')
           : JSON.stringify(profileData.customField, null, 2))
       : "",
     isIncognito: profileData?.isIncognito || false,
-    isHeadless: profileData?.isHeadless || false
+    isHeadless: profileData?.isHeadless || false,
+    // Instance hardware settings
+    resolution: profileData?.settings?.resolution || "360,640",
+    cpu: profileData?.settings?.cpu || 2,
+    memory: profileData?.settings?.memory || 2048,
   });
 
   // Fetch task status when profile data changes
@@ -240,12 +244,16 @@ export default function ProfileDetailsModal({
         proxyUsername: profileData.proxyUsername || "",
         proxyPassword: profileData.proxyPassword || "",
         customField: profileData.customField
-          ? (typeof profileData.customField === 'string' 
+          ? (typeof profileData.customField === 'string'
               ? profileData.customField.replace(/\\n/g, '\n').replace(/\\"/g, '"')
               : JSON.stringify(profileData.customField, null, 2))
           : "",
         isIncognito: profileData.isIncognito || false,
         isHeadless: profileData.isHeadless || false,
+        // Instance hardware settings
+        resolution: profileData.settings?.resolution || "360,640",
+        cpu: profileData.settings?.cpu || 2,
+        memory: profileData.settings?.memory || 2048,
       });
     }
   }, [profileData]);
@@ -320,6 +328,12 @@ export default function ProfileDetailsModal({
         customField: customFieldData,
         isIncognito: formData.isIncognito,
         isHeadless: formData.isHeadless,
+        // Instance hardware settings
+        settings: {
+          resolution: formData.resolution,
+          cpu: formData.cpu,
+          memory: formData.memory,
+        },
       };
 
       updateProfileMutation.mutate(updateData);
@@ -336,9 +350,9 @@ export default function ProfileDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-hidden">
+      <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-hidden bg-white text-gray-900">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 text-gray-900">
             <User className="h-5 w-5 text-blue-600" />
             Profile Details - {profileData.name}
           </DialogTitle>
@@ -361,7 +375,7 @@ export default function ProfileDetailsModal({
               <Button
                 onClick={handleUpdate}
                 disabled={updateProfileMutation.isPending}
-                className="bg-accent text-white hover:bg-emerald-600"
+                className="bg-blue-600 text-white hover:bg-blue-700"
               >
                 <Save className="h-4 w-4 mr-2" />
                 {updateProfileMutation.isPending ? "Updating..." : "Update"}

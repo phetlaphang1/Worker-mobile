@@ -12,7 +12,7 @@ import { LogDetailsModal, OutputDetailsModal } from "../modals-details/execution
 import { InstanceTable } from './instancesTab/InstanceTable';
 import { InstanceControls } from './instancesTab/InstanceControls';
 import { InstancePagination } from './instancesTab/InstancePagination';
-import { ScriptModal, DeleteConfirmDialog, ImagePreviewModal } from '../modals/ProfileModals';
+import { ScriptModal, DeleteConfirmDialog, ImagePreviewModal, NewInstanceModal, CloneInstanceModal } from '../modals/ProfileModals';
 import { getLastExecutionTime } from './instancesTab/instanceUtils';
 import { useInstanceMutations } from './instancesTab/useInstanceMutations';
 
@@ -54,6 +54,9 @@ export default function InstanceManager({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [profileToDelete, setProfileToDelete] = useState<Profile | null>(null);
   const [isLoadingProfileDetails, setIsLoadingProfileDetails] = useState(false);
+  const [isNewInstanceModalOpen, setIsNewInstanceModalOpen] = useState(false);
+  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
+  const [profileToClone, setProfileToClone] = useState<Profile | null>(null);
 
   // Settings state
   const [isTwitterCaring, setIsTwitterCaring] = useState(false);
@@ -82,8 +85,13 @@ export default function InstanceManager({
     stopProfileMutation,
     createNewProfileMutation,
     updateScriptMutation,
-    openBrowserMutation
+    launchInstanceOnlyMutation,
+    refreshStatusMutation
   } = useInstanceMutations();
+
+  // Run All / Stop All state
+  const [isRunningAll, setIsRunningAll] = useState(false);
+  const [isStoppingAll, setIsStoppingAll] = useState(false);
 
   // Fetch settings and scheduled profiles
   useEffect(() => {
@@ -273,6 +281,50 @@ export default function InstanceManager({
     }
   };
 
+  const handleRunAll = async () => {
+    setIsRunningAll(true);
+    try {
+      const promises = profiles.map(profile =>
+        launchProfileMutation.mutateAsync({ profileId: profile.id })
+      );
+      await Promise.all(promises);
+      toast({
+        title: "Success",
+        description: `Started ${profiles.length} instances`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to run all instances",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRunningAll(false);
+    }
+  };
+
+  const handleStopAll = async () => {
+    setIsStoppingAll(true);
+    try {
+      const promises = profiles.map(profile =>
+        stopProfileMutation.mutateAsync({ profileId: profile.id })
+      );
+      await Promise.all(promises);
+      toast({
+        title: "Success",
+        description: `Stopped ${profiles.length} instances`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to stop all instances",
+        variant: "destructive",
+      });
+    } finally {
+      setIsStoppingAll(false);
+    }
+  };
+
 
   // Filtering and sorting logic
   const filteredAndSortedProfiles = profiles
@@ -352,11 +404,17 @@ export default function InstanceManager({
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
         uniqueStatuses={uniqueStatuses}
-        onCreateNew={() => createNewProfileMutation.mutate(profiles)}
+        onCreateNew={() => setIsNewInstanceModalOpen(true)}
         isCreating={createNewProfileMutation.isPending}
         onNavigateToSettings={onNavigateToSettings}
         isAutoRunEnabled={isAutoRunEnabled}
         totalProfiles={profiles.length}
+        onRunAll={handleRunAll}
+        onStopAll={handleStopAll}
+        isRunningAll={isRunningAll}
+        isStoppingAll={isStoppingAll}
+        onRefresh={() => refreshStatusMutation.mutate()}
+        isRefreshing={refreshStatusMutation.isPending}
       />
 
       {filteredAndSortedProfiles.length === 0 ? (
@@ -369,9 +427,9 @@ export default function InstanceManager({
             Create your first instance to get started
           </p>
           <Button
-            onClick={() => createNewProfileMutation.mutate(profiles)}
+            onClick={() => setIsNewInstanceModalOpen(true)}
             disabled={createNewProfileMutation.isPending}
-            className="bg-accent text-white hover:bg-emerald-600"
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
           >
             {createNewProfileMutation.isPending ? "Creating..." : "New Instance"}
           </Button>
@@ -391,12 +449,15 @@ export default function InstanceManager({
             onStopProfile={(id) => stopProfileMutation.mutate({ profileId: id })}
             onLogClick={handleLogClick}
             onOutputClick={handleOutputClick}
-            onOpenBrowser={(profile) => openBrowserMutation.mutate(profile)}
-            onDuplicate={(profile) => duplicateProfileMutation.mutate(profile)}
+            onOpenBrowser={(profile) => launchInstanceOnlyMutation.mutate(profile)}
+            onDuplicate={(profile) => {
+              setProfileToClone(profile);
+              setIsCloneModalOpen(true);
+            }}
             onDelete={handleDeleteClick}
             isTwitterCaring={isTwitterCaring}
             selectedScript={selectedScript}
-            isOpeningBrowser={openBrowserMutation.isPending}
+            isOpeningBrowser={false}
             isDuplicating={duplicateProfileMutation.isPending}
           />
 
@@ -474,6 +535,37 @@ export default function InstanceManager({
         onConfirm={confirmDelete}
         profileName={profileToDelete?.name}
         isDeleting={deleteProfileMutation.isPending}
+      />
+
+      <NewInstanceModal
+        isOpen={isNewInstanceModalOpen}
+        onClose={() => setIsNewInstanceModalOpen(false)}
+        onSubmit={(config) => {
+          createNewProfileMutation.mutate(config as any);
+          setIsNewInstanceModalOpen(false);
+        }}
+        isCreating={createNewProfileMutation.isPending}
+      />
+
+      <CloneInstanceModal
+        isOpen={isCloneModalOpen}
+        onClose={() => {
+          setIsCloneModalOpen(false);
+          setProfileToClone(null);
+        }}
+        onSubmit={(newName, copyApps) => {
+          if (profileToClone) {
+            duplicateProfileMutation.mutate({
+              profile: profileToClone,
+              newName,
+              copyApps
+            });
+            setIsCloneModalOpen(false);
+            setProfileToClone(null);
+          }
+        }}
+        isCloning={duplicateProfileMutation.isPending}
+        originalName={profileToClone?.name}
       />
     </div>
   );

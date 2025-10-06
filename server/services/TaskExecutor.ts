@@ -8,7 +8,7 @@ import axios from 'axios';
 export interface Task {
   id: string;
   type: 'twitter_like' | 'twitter_follow' | 'twitter_retweet' | 'twitter_comment' | 'twitter_post' | 'custom';
-  profileId: string;
+  profileId: number | '';
   data: Record<string, any>;
   status: 'pending' | 'running' | 'completed' | 'failed';
   priority: number;
@@ -149,6 +149,11 @@ export class TaskExecutor {
       task.status = 'running';
       task.startedAt = new Date();
       logger.info(`Starting task ${task.id}: ${task.type}`);
+
+      // Check profileId
+      if (!task.profileId) {
+        throw new Error(`Task ${task.id} has no profile assigned`);
+      }
 
       // Get profile
       const profile = this.profileManager.getProfile(task.profileId);
@@ -365,7 +370,7 @@ export class TaskExecutor {
     return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  private getAvailableProfile(): string {
+  private getAvailableProfile(): number | '' {
     // Get first inactive profile or create a new one
     const profiles = this.profileManager.getAllProfiles();
     const inactiveProfile = profiles.find(p => p.status === 'inactive');

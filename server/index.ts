@@ -176,6 +176,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Start services
 async function startServices() {
   try {
+    // Initialize profile manager first
+    await profileManager.initialize();
+    logger.info('Profile manager initialized');
+
     // Start task executor
     await taskExecutor.start();
     logger.info('Task executor started');

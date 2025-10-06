@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:server:*)",
+      "Read(//d/BArmy/Worker-mobile/client/src/components/modals-details/**)",
+      "Read(//d/BArmy/Worker-mobile/server/core/**)",
+      "Read(//d/BArmy/Worker-mobile/server/services/**)",
+      "Read(//d/BArmy/Worker-mobile/client/src/components/instances/instancesTab/**)",
+      "Read(//d/BArmy/Worker-mobile/client/src/components/instances/**)",
+      "mcp__ide__getDiagnostics",
+      "Read(//d/**)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" help)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" list2)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" launch --index 21)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" adb --index 21 --command \"shell pm list packages | grep twitter\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" runapp --index 21 --packagename \"com.twitter.android\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

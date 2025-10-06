@@ -163,26 +163,30 @@ export const getStatusBadgeVariant = (status?: string) => {
 export const getStatusBadgeClasses = (status?: string) => {
   switch (status) {
     case 'NEW':
-      return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
+      return 'bg-blue-500 text-white border-blue-600 hover:bg-blue-600 font-semibold';
     case 'READY':
-      return 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200';
+      return 'bg-green-500 text-white border-green-600 hover:bg-green-600 font-semibold';
     case 'RUNNING':
-      return 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200';
+      return 'bg-purple-500 text-white border-purple-600 hover:bg-purple-600 font-semibold animate-pulse';
     case 'COMPLETED':
-      return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
+      return 'bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600 font-semibold';
     case 'FAILED':
-      return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
+      return 'bg-red-500 text-white border-red-600 hover:bg-red-600 font-semibold';
     default:
-      return 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200';
+      return 'bg-gray-400 text-white border-gray-500 hover:bg-gray-500 font-semibold';
   }
 };
 
 export const mapLegacyStatus = (status?: string): 'NEW' | 'READY' | 'RUNNING' | 'COMPLETED' | 'FAILED' => {
   switch (status) {
     case 'NEW':
-      return 'NEW';
+      return 'READY';
     case 'READY':
       return 'READY';
+    case 'inactive':
+      return 'READY';
+    case 'active':
+      return 'RUNNING';
     case 'RUNNING':
       return 'RUNNING';
     case 'COMPLETED':
@@ -190,6 +194,6 @@ export const mapLegacyStatus = (status?: string): 'NEW' | 'READY' | 'RUNNING' | 
     case 'FAILED':
       return 'FAILED';
     default:
-      return 'NEW';
+      return 'READY';
   }
 };

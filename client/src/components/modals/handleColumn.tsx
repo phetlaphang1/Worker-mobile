@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Chrome, Copy, Trash2 } from 'lucide-react';
+import { Smartphone, Copy, Trash2 } from 'lucide-react';
 
 interface HandleColumnProps {
   // For Profile or Task entity
@@ -59,21 +59,21 @@ export const HandleColumn: React.FC<HandleColumnProps> = ({
   
   return (
     <div className="flex items-center space-x-1">
-      {/* Open Chrome Browser Button */}
+      {/* Launch Instance Button */}
       {showOpenBrowser && entity && onOpenBrowser && (
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 disabled:text-gray-300 disabled:cursor-not-allowed"
           onClick={onOpenBrowser}
           disabled={isRunning || isOpeningBrowser || disableOpenBrowser}
           title={
-            isRunning 
-              ? "Cannot open browser while running"
-              : openBrowserTooltip || "Open Chrome browser for testing"
+            isRunning
+              ? "Instance is already running"
+              : openBrowserTooltip || "Launch instance without running script"
           }
         >
-          <Chrome className="h-3 w-3" />
+          <Smartphone className="h-3 w-3" />
         </Button>
       )}
       

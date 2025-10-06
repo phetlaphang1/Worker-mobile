@@ -7,7 +7,7 @@ import { MobilePage } from '../automation/MobilePageAdapter.js';
 
 export interface AppiumScriptTask {
   id: string;
-  profileId: string;
+  profileId: number;
   scriptCode: string; // JavaScript code từ frontend
   status: 'pending' | 'running' | 'completed' | 'failed';
   result?: any;
@@ -24,7 +24,7 @@ export interface AppiumScriptTask {
 export class AppiumScriptService {
   private controller: LDPlayerController;
   private profileManager: ProfileManager;
-  private activeSessions: Map<string, Browser> = new Map();
+  private activeSessions: Map<number, Browser> = new Map();
   private scriptQueue: AppiumScriptTask[] = [];
   private runningScripts: Map<string, Promise<any>> = new Map();
 
@@ -71,7 +71,7 @@ export class AppiumScriptService {
   /**
    * Lấy hoặc tạo Appium session
    */
-  private async getOrCreateSession(profileId: string): Promise<Browser> {
+  private async getOrCreateSession(profileId: number): Promise<Browser> {
     const profile = this.profileManager.getProfile(profileId);
     if (!profile) {
       throw new Error(`Profile ${profileId} not found`);
@@ -276,7 +276,7 @@ export class AppiumScriptService {
   /**
    * Queue script để execute
    */
-  async queueScript(scriptCode: string, profileId: string): Promise<AppiumScriptTask> {
+  async queueScript(scriptCode: string, profileId: number): Promise<AppiumScriptTask> {
     const task: AppiumScriptTask = {
       id: this.generateTaskId(),
       profileId,
@@ -346,14 +346,14 @@ export class AppiumScriptService {
   /**
    * Get tasks for specific profile
    */
-  getTasksForProfile(profileId: string): AppiumScriptTask[] {
+  getTasksForProfile(profileId: number): AppiumScriptTask[] {
     return this.scriptQueue.filter(t => t.profileId === profileId);
   }
 
   /**
    * Close session cho profile
    */
-  async closeSession(profileId: string) {
+  async closeSession(profileId: number) {
     const session = this.activeSessions.get(profileId);
     if (session) {
       try {

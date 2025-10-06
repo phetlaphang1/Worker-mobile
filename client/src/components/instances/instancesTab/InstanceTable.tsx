@@ -221,8 +221,8 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
                   onDelete={() => onDelete(profile)}
                   isOpeningBrowser={isOpeningBrowser}
                   isDuplicating={isDuplicating}
-                  openBrowserTooltip="Open Chrome browser for testing with instance configuration"
-                  duplicateTooltip="Duplicate instance with same configuration"
+                  openBrowserTooltip="Launch instance only (without running script)"
+                  duplicateTooltip="Clone instance with all apps and settings"
                   deleteTooltip="Delete instance and all associated data"
                 />
               </TableCell>

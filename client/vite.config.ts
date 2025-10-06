@@ -4,14 +4,12 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [
-    react({
-      // Enable Fast Refresh
-      fastRefresh: true,
-    }),
+    react(),
   ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@shared': path.resolve(__dirname, '../shared'),
     },
   },
   build: {

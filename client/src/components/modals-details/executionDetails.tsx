@@ -194,9 +194,9 @@ export function LogDetailsModal({ isOpen, onClose, title, content, type, id }: L
   
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[85vh] w-[90vw]">
+      <DialogContent className="max-w-6xl max-h-[85vh] w-[90vw] bg-white text-gray-900">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 text-gray-900">
             {title}
             {id && isConnected && (
               <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
@@ -211,10 +211,10 @@ export function LogDetailsModal({ isOpen, onClose, title, content, type, id }: L
           </DialogTitle>
         </DialogHeader>
         <div className="mt-4">
-          <div className="bg-black text-green-400 rounded-md font-mono text-sm max-h-[65vh] overflow-y-auto">
+          <div className="bg-gray-50 text-gray-900 rounded-md font-mono text-sm max-h-[65vh] overflow-y-auto border border-gray-300">
             {allLogs.map((line, index) => (
-              <div key={index} className="flex border-b border-gray-800 last:border-b-0">
-                <div className="w-12 bg-gray-900 text-gray-500 text-right px-2 py-1 text-xs border-r border-gray-700 select-none flex-shrink-0">
+              <div key={index} className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-12 bg-gray-200 text-gray-600 text-right px-2 py-1 text-xs border-r border-gray-300 select-none flex-shrink-0">
                   {index + 1}
                 </div>
                 <div className="flex-1 px-4 py-1 whitespace-pre-wrap break-all">
@@ -396,13 +396,13 @@ export function OutputDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-4xl bg-white text-gray-900">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-gray-900">{title}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="bg-gray-100 p-3 rounded border border-gray-300">
+            <p className="text-sm text-gray-700">
               Path: {path}
             </p>
           </div>
@@ -410,20 +410,20 @@ export function OutputDetailsModal({
             {files && files.length > 0 ? (
               <div className="space-y-2">
                 {files.map((file: any, index: number) => (
-                  <div 
-                    key={index} 
-                    className="flex items-center gap-3 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  <div
+                    key={index}
+                    className="flex items-center gap-3 p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer bg-white"
                     onClick={() => window.open(`${baseUrl}/output/${file.name}`, '_blank')}
                   >
                     <div className="flex-shrink-0">
                       {getFileIcon(file.name)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-blue-600 hover:text-blue-700 underline dark:text-blue-400 dark:hover:text-blue-300 truncate">
+                      <div className="font-medium text-blue-600 hover:text-blue-700 underline truncate">
                         {file.name}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                      <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                        <span className="px-2 py-0.5 bg-gray-200 rounded">
                           {getFileType(file.name)}
                         </span>
                         <span>{file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'Unknown size'}</span>
