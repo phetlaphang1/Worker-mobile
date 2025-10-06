@@ -125,7 +125,8 @@ export class ProfileManager {
   }): Promise<MobileProfile> {
     try {
       const profileId = this.generateProfileId();
-      const instanceName = `Profile_${profileId}`;
+      // Use user's name directly as instance name (LDPlayer doesn't like long names)
+      const instanceName = config.name.replace(/[^a-zA-Z0-9-_]/g, '_');
       const port = 5555 + this.profiles.size * 2;
 
       // Default settings
@@ -348,39 +349,65 @@ export class ProfileManager {
       throw new Error(`Profile ${profileId} not found`);
     }
 
-    // Create new profile with same settings
-    const clonedProfile = await this.createProfile({
-      name: newName,
-      settings: originalProfile.settings,
-      device: originalProfile.device,
-      network: originalProfile.network,
-      location: originalProfile.location
-    });
+    let clonedProfile: MobileProfile;
 
-    // Copy apps if requested
-    if (options?.copyApps && originalProfile.apps) {
-      logger.info(`Cloning apps from ${originalProfile.name} to ${newName}`);
+    if (options?.copyApps) {
+      // Clone instance WITH apps using LDPlayer copy command
+      logger.info(`Cloning instance with apps from ${originalProfile.name} to ${newName}`);
 
-      // Use LDPlayer copy command to clone instance (faster than reinstalling apps)
-      try {
-        await this.controller.cloneInstance(originalProfile.instanceName, clonedProfile.instanceName);
+      const newProfileId = this.generateProfileId();
+      // Use newName directly as instance name (sanitized for LDPlayer)
+      const newInstanceName = newName.replace(/[^a-zA-Z0-9-_]/g, '_');
 
-        // Update apps status
-        clonedProfile.apps = JSON.parse(JSON.stringify(originalProfile.apps));
-        await this.saveProfile(clonedProfile);
+      // Clone LDPlayer instance (includes all apps)
+      const clonedInstance = await this.controller.cloneInstance(
+        originalProfile.instanceName,
+        newInstanceName
+      );
 
-        logger.info(`Apps cloned successfully`);
-      } catch (error) {
-        logger.warn('Failed to clone apps, will install manually on activation');
-      }
+      // Create profile object from cloned instance
+      clonedProfile = {
+        id: newProfileId,
+        name: newName,
+        instanceName: newInstanceName,
+        port: clonedInstance.port,
+        settings: { ...originalProfile.settings },
+        device: originalProfile.device ? { ...originalProfile.device } : {},
+        network: originalProfile.network ? { ...originalProfile.network } : { useProxy: false },
+        location: originalProfile.location ? { ...originalProfile.location } : undefined,
+        apps: originalProfile.apps ? JSON.parse(JSON.stringify(originalProfile.apps)) : {},
+        status: 'inactive',
+        createdAt: new Date(),
+        metadata: originalProfile.metadata ? JSON.parse(JSON.stringify(originalProfile.metadata)) : {}
+      };
+
+      // Register instance in controller
+      this.controller.getInstance(newInstanceName); // This ensures it's tracked
+
+      logger.info(`Instance cloned with apps successfully (index: ${clonedInstance.index})`);
+    } else {
+      // Create new empty profile (no apps)
+      logger.info(`Creating new profile without apps: ${newName}`);
+
+      clonedProfile = await this.createProfile({
+        name: newName,
+        settings: originalProfile.settings,
+        device: originalProfile.device,
+        network: originalProfile.network,
+        location: originalProfile.location
+      });
     }
+
+    // Save profile
+    this.profiles.set(clonedProfile.id, clonedProfile);
+    await this.saveProfile(clonedProfile);
 
     // Auto-launch and setup if requested
     if (options?.launchAndSetup) {
       await this.activateProfile(clonedProfile.id);
     }
 
-    logger.info(`Cloned profile ${originalProfile.name} to ${newName}`);
+    logger.info(`Cloned profile ${originalProfile.name} to ${newName} (ID: ${clonedProfile.id})`);
     return clonedProfile;
   }
 
@@ -700,6 +727,81 @@ export class ProfileManager {
     }
   }
 
+  // Import existing LDPlayer instance as Profile
+  async importExistingInstance(instanceName: string, index: number): Promise<MobileProfile> {
+    try {
+      // Check if profile already exists for this instance
+      const existingProfile = Array.from(this.profiles.values()).find(
+        p => p.instanceName === instanceName
+      );
+
+      if (existingProfile) {
+        logger.info(`Profile already exists for instance ${instanceName}`);
+        return existingProfile;
+      }
+
+      const profileId = this.generateProfileId();
+      const port = 5555 + index * 2;
+
+      // Create profile object for existing instance
+      const profile: MobileProfile = {
+        id: profileId,
+        name: instanceName, // Use instance name as profile name
+        instanceName,
+        port,
+        settings: {
+          resolution: '360,640', // Default, will be updated if needed
+          dpi: 160,
+          cpu: 2,
+          memory: 2048,
+          androidVersion: '9'
+        },
+        device: {},
+        network: { useProxy: false },
+        apps: {}, // Will be detected on first activation
+        status: 'inactive',
+        createdAt: new Date()
+      };
+
+      // Save profile
+      this.profiles.set(profileId, profile);
+      await this.saveProfile(profile);
+
+      logger.info(`Imported existing instance: ${instanceName} (index: ${index}, port: ${port})`);
+      return profile;
+    } catch (error) {
+      logger.error(`Failed to import instance ${instanceName}:`, error);
+      throw error;
+    }
+  }
+
+  // Scan and import all existing LDPlayer instances
+  async scanAndImportAllInstances(): Promise<MobileProfile[]> {
+    try {
+      logger.info('Scanning for existing LDPlayer instances...');
+
+      // Get all instances from LDPlayer
+      const instances = await this.controller.getAllInstancesFromLDConsole();
+
+      const importedProfiles: MobileProfile[] = [];
+
+      for (const instance of instances) {
+        try {
+          const profile = await this.importExistingInstance(instance.name, instance.index);
+          importedProfiles.push(profile);
+        } catch (error) {
+          logger.warn(`Failed to import instance ${instance.name}:`, error);
+        }
+      }
+
+      logger.info(`Imported ${importedProfiles.length} instances as profiles`);
+      return importedProfiles;
+    } catch (error) {
+      logger.error('Failed to scan and import instances:', error);
+      throw error;
+    }
+  }
+
   // Get profile statistics
   getStatistics(): {
     total: number;
@@ -714,6 +816,56 @@ export class ProfileManager {
       inactive: profiles.filter(p => p.status === 'inactive').length,
       suspended: profiles.filter(p => p.status === 'suspended').length
     };
+  }
+
+  // Install app on profile using ldconsole
+  async installAppOnProfile(profileId: string, apkFileName: string): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) {
+      throw new Error(`Profile ${profileId} not found`);
+    }
+
+    try {
+      const apkPath = path.resolve(process.cwd(), 'apks', apkFileName);
+      await fs.access(apkPath); // Check if file exists
+
+      // Get instance index
+      const instance = this.controller.getInstance(profile.instanceName);
+      if (!instance) {
+        throw new Error(`Instance ${profile.instanceName} not found`);
+      }
+
+      logger.info(`Installing ${apkFileName} on profile ${profile.name} (index: ${instance.index})`);
+      await this.controller.installAppViaLDConsole(instance.index, apkPath);
+
+      logger.info(`App ${apkFileName} installed successfully on ${profile.name}`);
+    } catch (error) {
+      logger.error(`Failed to install app on profile ${profileId}:`, error);
+      throw error;
+    }
+  }
+
+  // Launch app on profile using ldconsole
+  async launchAppOnProfile(profileId: string, packageName: string): Promise<void> {
+    const profile = this.profiles.get(profileId);
+    if (!profile) {
+      throw new Error(`Profile ${profileId} not found`);
+    }
+
+    try {
+      const instance = this.controller.getInstance(profile.instanceName);
+      if (!instance) {
+        throw new Error(`Instance ${profile.instanceName} not found`);
+      }
+
+      logger.info(`Launching ${packageName} on profile ${profile.name} (index: ${instance.index})`);
+      await this.controller.launchAppViaLDConsole(instance.index, packageName);
+
+      logger.info(`App ${packageName} launched successfully on ${profile.name}`);
+    } catch (error) {
+      logger.error(`Failed to launch app on profile ${profileId}:`, error);
+      throw error;
+    }
   }
 }
 

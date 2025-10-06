@@ -86,10 +86,10 @@ export function Dashboard() {
     try {
       setIsLoading(true);
       const [profilesRes, tasksRes, statsRes, appiumTasksRes] = await Promise.all([
-        axios.get<Profile[]>('http://localhost:5051/api/profiles'),
-        axios.get<Task[]>('http://localhost:5051/api/scripts'),
-        axios.get<Stats>('http://localhost:5051/api/statistics'),
-        axios.get<AppiumTask[]>('http://localhost:5051/api/appium/tasks'),
+        axios.get<Profile[]>('http://localhost:5050/api/profiles'),
+        axios.get<Task[]>('http://localhost:5050/api/scripts'),
+        axios.get<Stats>('http://localhost:5050/api/statistics'),
+        axios.get<AppiumTask[]>('http://localhost:5050/api/appium/tasks'),
       ]);
 
       setProfiles(profilesRes.data || []);
@@ -118,7 +118,7 @@ export function Dashboard() {
     const inactiveProfiles = profiles.filter((p) => p.status === 'inactive');
     for (const profile of inactiveProfiles) {
       try {
-        await axios.post(`http://localhost:5051/api/profiles/${profile.id}/activate`);
+        await axios.post(`http://localhost:5050/api/profiles/${profile.id}/activate`);
       } catch (error) {
         console.error(`Failed to launch ${profile.name}:`, error);
       }
@@ -130,7 +130,7 @@ export function Dashboard() {
     const activeProfiles = profiles.filter((p) => p.status === 'active');
     for (const profile of activeProfiles) {
       try {
-        await axios.post(`http://localhost:5051/api/profiles/${profile.id}/deactivate`);
+        await axios.post(`http://localhost:5050/api/profiles/${profile.id}/deactivate`);
       } catch (error) {
         console.error(`Failed to stop ${profile.name}:`, error);
       }
@@ -146,7 +146,7 @@ export function Dashboard() {
     }
 
     try {
-      await axios.post('http://localhost:5051/api/appium/execute', {
+      await axios.post('http://localhost:5050/api/appium/execute', {
         profileId: selectedProfileId,
         scriptCode: scriptCode,
       });
@@ -433,7 +433,7 @@ return { success: true, message: 'Script completed!' };`}
                     onClick={async () => {
                       try {
                         await axios.post(
-                          `http://localhost:5051/api/profiles/${profile.id}/deactivate`
+                          `http://localhost:5050/api/profiles/${profile.id}/deactivate`
                         );
                         await fetchData();
                       } catch (error) {

@@ -1,4 +1,5 @@
 import { Express, Request, Response } from 'express';
+import path from 'path';
 import LDPlayerController from '../core/LDPlayerController.js';
 import ProfileManager from '../services/ProfileManager.js';
 import TaskExecutor from '../services/TaskExecutor.js';
@@ -7,6 +8,7 @@ import AppiumScriptService from '../services/AppiumScriptService.js';
 import { setupAuthRoutes } from './auth.js';
 import { logger } from '../utils/logger.js';
 import { mockSettings, mockStatistics } from './mockData.js';
+import { getAutoInstallApps } from '../config/apps.config.js';
 
 interface RouteServices {
   ldPlayerController: LDPlayerController;
@@ -55,14 +57,61 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
+  // Get default profile configuration
+  app.get('/api/profiles/default-config', (req: Request, res: Response) => {
+    try {
+      const defaultConfig = {
+        settings: {
+          resolution: '360,640',
+          dpi: 160,
+          cpu: 2,
+          memory: 2048,
+          androidVersion: '9'
+        },
+        device: {},
+        network: {
+          useProxy: false
+        },
+        // Auto-install apps based on .env config
+        selectedApps: getAutoInstallApps().map(app => path.basename(app.apkPath)),
+        autoRunScripts: [],
+        // Auto-activate by default (launch + install apps after creating profile)
+        autoActivate: true
+      };
+      res.json(defaultConfig);
+    } catch (error) {
+      logger.error('Error getting default config:', error);
+      res.status(500).json({ error: 'Failed to get default config' });
+    }
+  });
+
   app.post('/api/profiles', async (req: Request, res: Response) => {
     try {
-      const { selectedApps, autoRunScripts, ...profileData } = req.body;
+      const { selectedApps, autoRunScripts, autoActivate = true, ...profileData } = req.body;
+
+      // Validate required fields
+      if (!profileData.name) {
+        return res.status(400).json({ error: 'Profile name is required' });
+      }
+
+      // Apply default settings if not provided
+      const defaultSettings = {
+        resolution: '360,640',
+        dpi: 160,
+        cpu: 2,
+        memory: 2048,
+        androidVersion: '9'
+      };
+
+      profileData.settings = {
+        ...defaultSettings,
+        ...(profileData.settings || {})
+      };
 
       // Create profile
       const profile = await profileManager.createProfile(profileData);
 
-      // Install selected apps if provided
+      // Install selected apps if provided (otherwise use auto-install from .env)
       if (selectedApps && Array.isArray(selectedApps) && selectedApps.length > 0) {
         // Store selected apps in profile metadata for installation during activation
         profile.metadata = {
@@ -84,7 +133,26 @@ export function setupRoutes(app: Express, services: RouteServices) {
         await profileManager.updateProfile(profile.id, { metadata: profile.metadata });
       }
 
-      res.json({ profile });
+      logger.info(`Created profile "${profile.name}" with ID ${profile.id}`);
+
+      // Auto-activate if requested (launch + install apps)
+      if (autoActivate) {
+        logger.info(`Auto-activating profile "${profile.name}"...`);
+        try {
+          await profileManager.activateProfile(profile.id);
+          logger.info(`Profile "${profile.name}" activated successfully`);
+        } catch (activateError) {
+          logger.error(`Failed to auto-activate profile "${profile.name}":`, activateError);
+          // Return profile even if activation fails
+          return res.json({
+            success: true,
+            profile,
+            warning: 'Profile created but failed to auto-activate. Please activate manually.'
+          });
+        }
+      }
+
+      res.json({ success: true, profile });
     } catch (error) {
       logger.error('Error creating profile:', error);
       res.status(500).json({ error: 'Failed to create profile' });
@@ -128,6 +196,76 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error deactivating profile:', error);
       res.status(500).json({ error: 'Failed to deactivate profile' });
+    }
+  });
+
+  app.post('/api/profiles/:profileId/clone', async (req: Request, res: Response) => {
+    try {
+      const { newName, copyApps, launchAndSetup } = req.body;
+      if (!newName) {
+        return res.status(400).json({ error: 'newName is required' });
+      }
+      const clonedProfile = await profileManager.cloneProfile(
+        req.params.profileId,
+        newName,
+        { copyApps, launchAndSetup }
+      );
+      res.json({ success: true, profile: clonedProfile });
+    } catch (error) {
+      logger.error('Error cloning profile:', error);
+      res.status(500).json({ error: 'Failed to clone profile' });
+    }
+  });
+
+  app.post('/api/profiles/:profileId/install-app', async (req: Request, res: Response) => {
+    try {
+      const { apkFileName } = req.body;
+      if (!apkFileName) {
+        return res.status(400).json({ error: 'apkFileName is required' });
+      }
+      await profileManager.installAppOnProfile(req.params.profileId, apkFileName);
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error installing app:', error);
+      res.status(500).json({ error: 'Failed to install app' });
+    }
+  });
+
+  app.post('/api/profiles/:profileId/launch-app', async (req: Request, res: Response) => {
+    try {
+      const { packageName } = req.body;
+      if (!packageName) {
+        return res.status(400).json({ error: 'packageName is required' });
+      }
+      await profileManager.launchAppOnProfile(req.params.profileId, packageName);
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error launching app:', error);
+      res.status(500).json({ error: 'Failed to launch app' });
+    }
+  });
+
+  app.post('/api/profiles/import-existing', async (req: Request, res: Response) => {
+    try {
+      const profiles = await profileManager.scanAndImportAllInstances();
+      res.json({ success: true, count: profiles.length, profiles });
+    } catch (error) {
+      logger.error('Error importing existing instances:', error);
+      res.status(500).json({ error: 'Failed to import existing instances' });
+    }
+  });
+
+  app.post('/api/profiles/import-instance', async (req: Request, res: Response) => {
+    try {
+      const { instanceName, index } = req.body;
+      if (!instanceName || index === undefined) {
+        return res.status(400).json({ error: 'instanceName and index are required' });
+      }
+      const profile = await profileManager.importExistingInstance(instanceName, index);
+      res.json({ success: true, profile });
+    } catch (error) {
+      logger.error('Error importing instance:', error);
+      res.status(500).json({ error: 'Failed to import instance' });
     }
   });
 

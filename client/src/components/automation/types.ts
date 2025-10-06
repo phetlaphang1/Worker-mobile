@@ -78,7 +78,7 @@ export type NodeData = {
     authToken?: string;
     apiKeyHeader?: string;
     apiKeyValue?: string;
-    requestTimeout?: number;
+    httpTimeout?: number;
     // AI
     aiRole?: "assistant" | "social_commenter" | "content_creator" | "translator" | "summarizer";
     aiPrompt?: string;

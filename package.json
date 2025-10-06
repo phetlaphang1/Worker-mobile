@@ -19,8 +19,10 @@
     "detect-ldplayer": "tsx server/utils/detectLDPlayer.ts"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.2.3",
     "@types/bcryptjs": "^3.0.0",
     "@types/jsonwebtoken": "^9.0.10",
+    "@uiw/react-textarea-code-editor": "^3.1.1",
     "@wdio/appium-service": "^8.27.0",
     "@wdio/local-runner": "^8.27.0",
     "adb-ts": "^2.0.0",
@@ -31,6 +33,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "jsoneditor": "^10.4.1",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.453.0",
     "node-schedule": "^2.1.1",

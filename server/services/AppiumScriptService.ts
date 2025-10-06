@@ -2,6 +2,8 @@ import { remote, Browser, Element } from 'webdriverio';
 import LDPlayerController from '../core/LDPlayerController.js';
 import ProfileManager, { MobileProfile } from './ProfileManager.js';
 import { logger } from '../utils/logger.js';
+import { AppiumRunner } from '../automation/AppiumRunner.js';
+import { MobilePage } from '../automation/MobilePageAdapter.js';
 
 export interface AppiumScriptTask {
   id: string;

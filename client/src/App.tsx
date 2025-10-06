@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { TaskCenterTab } from './components/worker/TaskCenterTab';
-import { ProfilesTab } from './components/worker/ProfilesTab';
-import { SettingsTab } from './components/worker/SettingsTab';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './libs/queryClient';
+import { Toaster } from './components/ui/toaster';
+import { TaskCenterTab } from './components/tasks/TaskCenterTab';
+import { InstancesTab } from './components/instances/InstancesTab';
+import { SettingsTab } from './components/settings/SettingsTab';
 import {
   LayoutDashboard,
   Smartphone,
@@ -21,12 +24,14 @@ export default function App() {
 
   const tabs = [
     { id: 'tasks', name: 'Task Center', icon: Download },
-    { id: 'profiles', name: 'Profiles', icon: Smartphone },
+    { id: 'instances', name: 'Instances', icon: Smartphone },
     { id: 'settings', name: 'Settings', icon: Settings },
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 relative">
+    <QueryClientProvider client={queryClient}>
+      <Toaster />
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 relative">
       {/* Sidebar */}
       {!sidebarMinimized && (
         <div
@@ -102,7 +107,7 @@ export default function App() {
                   LDPlayer Control Center
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  v1.0.0 • localhost:5051
+                  v1.0.0 • localhost:5050
                 </p>
               </div>
             </div>
@@ -127,9 +132,10 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
         {activeTab === 'tasks' && <TaskCenterTab />}
-        {activeTab === 'profiles' && <ProfilesTab />}
+        {activeTab === 'instances' && <InstancesTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>
+    </QueryClientProvider>
   );
 }

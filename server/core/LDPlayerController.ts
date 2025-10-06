@@ -158,23 +158,34 @@ export class LDPlayerController {
     }
   }
 
-  async cloneInstance(sourceName: string, targetName: string): Promise<void> {
+  async cloneInstance(sourceName: string, targetName: string): Promise<LDPlayerInstance> {
     try {
       await execAsync(`"${this.ldConsolePath}" copy --name "${targetName}" --from "${sourceName}"`);
 
-      // Register the cloned instance
-      const sourceInstance = this.instances.get(sourceName);
-      if (sourceInstance) {
-        const clonedInstance: LDPlayerInstance = {
-          name: targetName,
-          index: this.instances.size,
-          port: 5555 + this.instances.size * 2,
-          status: 'stopped'
-        };
-        this.instances.set(targetName, clonedInstance);
+      // Get the actual index from ldconsole list2
+      const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
+      const lines = listResult.stdout.trim().split('\n');
+      let instanceIndex = this.instances.size;
+
+      for (const line of lines) {
+        const parts = line.split(',');
+        if (parts[1] === targetName) {
+          instanceIndex = parseInt(parts[0], 10);
+          break;
+        }
       }
 
-      logger.info(`Cloned instance ${sourceName} to ${targetName}`);
+      // Register the cloned instance
+      const clonedInstance: LDPlayerInstance = {
+        name: targetName,
+        index: instanceIndex,
+        port: 5555 + instanceIndex * 2,
+        status: 'stopped'
+      };
+      this.instances.set(targetName, clonedInstance);
+
+      logger.info(`Cloned instance ${sourceName} to ${targetName} (index: ${instanceIndex})`);
+      return clonedInstance;
     } catch (error) {
       logger.error(`Failed to clone instance from ${sourceName} to ${targetName}:`, error);
       throw error;
@@ -407,6 +418,72 @@ export class LDPlayerController {
     const instances = Array.from(this.instances.keys());
     for (const name of instances) {
       await this.stopInstance(name);
+    }
+  }
+
+  // Install app using ldconsole (more reliable than ADB)
+  async installAppViaLDConsole(instanceIndex: number, apkPath: string): Promise<void> {
+    try {
+      await execAsync(`"${this.ldConsolePath}" installapp --index ${instanceIndex} --filename "${apkPath}"`);
+      logger.info(`Installed APK via ldconsole on instance index ${instanceIndex}`);
+    } catch (error) {
+      logger.error(`Failed to install APK via ldconsole on instance index ${instanceIndex}:`, error);
+      throw error;
+    }
+  }
+
+  // Launch app using ldconsole
+  async launchAppViaLDConsole(instanceIndex: number, packageName: string): Promise<void> {
+    try {
+      await execAsync(`"${this.ldConsolePath}" runapp --index ${instanceIndex} --packagename "${packageName}"`);
+      logger.info(`Launched app ${packageName} via ldconsole on instance index ${instanceIndex}`);
+    } catch (error) {
+      logger.error(`Failed to launch app via ldconsole on instance index ${instanceIndex}:`, error);
+      throw error;
+    }
+  }
+
+  // Get instance index by name
+  getInstanceIndex(instanceName: string): number | undefined {
+    const instance = this.instances.get(instanceName);
+    return instance?.index;
+  }
+
+  // Get all instances from ldconsole (scan existing instances)
+  async getAllInstancesFromLDConsole(): Promise<Array<{ name: string; index: number; port: number }>> {
+    try {
+      const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
+      const lines = listResult.stdout.trim().split('\n');
+
+      const instances: Array<{ name: string; index: number; port: number }> = [];
+
+      for (const line of lines) {
+        const parts = line.split(',');
+        if (parts.length >= 2) {
+          const index = parseInt(parts[0], 10);
+          const name = parts[1];
+          const port = 5555 + index * 2;
+
+          instances.push({ name, index, port });
+
+          // Also register in internal map if not already
+          if (!this.instances.has(name)) {
+            const instance: LDPlayerInstance = {
+              name,
+              index,
+              port,
+              status: 'stopped'
+            };
+            this.instances.set(name, instance);
+          }
+        }
+      }
+
+      logger.info(`Found ${instances.length} LDPlayer instances`);
+      return instances;
+    } catch (error) {
+      logger.error('Failed to get instances from ldconsole:', error);
+      throw error;
     }
   }
 }
