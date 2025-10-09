@@ -37,6 +37,7 @@
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.453.0",
     "node-schedule": "^2.1.1",
+    "p-limit": "^5.0.0",
     "proxy-chain": "^2.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

@@ -183,12 +183,16 @@ export const mapLegacyStatus = (status?: string): 'NEW' | 'READY' | 'RUNNING' | 
       return 'READY';
     case 'READY':
       return 'READY';
-    case 'inactive':
-      return 'READY';
-    case 'active':
+    case 'active':  // Mobile instance active status (from ProfileManager)
       return 'RUNNING';
+    case 'inactive':  // Mobile instance inactive status (from ProfileManager)
+      return 'READY';
     case 'RUNNING':
       return 'RUNNING';
+    case 'running':  // Mobile instance running status (lowercase - legacy)
+      return 'RUNNING';
+    case 'stopped':  // Mobile instance stopped status (lowercase - legacy)
+      return 'READY';
     case 'COMPLETED':
       return 'COMPLETED';
     case 'FAILED':

@@ -55,7 +55,7 @@ export const HandleColumn: React.FC<HandleColumnProps> = ({
   disableDuplicate = false,
   disableDelete = false,
 }) => {
-  const isRunning = entity?.status === 'RUNNING';
+  const isRunning = entity?.status === 'active';
   
   return (
     <div className="flex items-center space-x-1">

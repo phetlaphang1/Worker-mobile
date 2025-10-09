@@ -16,3 +16,7 @@ server/dist/
 
 # Data files
 data/
+
+# Proxy configuration (sensitive)
+proxies.json
+proxies.txt

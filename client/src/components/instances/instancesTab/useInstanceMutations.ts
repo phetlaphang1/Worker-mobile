@@ -13,7 +13,7 @@ export const useInstanceMutations = () => {
       queryClient.setQueryData(["http://localhost:5050/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
-            ? { ...profile, status: "RUNNING" }
+            ? { ...profile, status: "active" }
             : profile
         );
       });
@@ -59,11 +59,11 @@ export const useInstanceMutations = () => {
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
     },
     onError: (error: any, params) => {
-      // Update status to FAILED on error
+      // Update status to inactive on error (instance failed to start)
       queryClient.setQueryData(["http://localhost:5050/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
-            ? { ...profile, status: "FAILED" }
+            ? { ...profile, status: "inactive" }
             : profile
         );
       });
@@ -135,7 +135,7 @@ export const useInstanceMutations = () => {
       queryClient.setQueryData(["http://localhost:5050/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
-            ? { ...profile, status: "READY" }
+            ? { ...profile, status: "inactive" }
             : profile
         );
       });
@@ -165,11 +165,11 @@ export const useInstanceMutations = () => {
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
     },
     onError: (error: any, params) => {
-      // Keep status as RUNNING if stop fails (profile is still running)
+      // Keep status as running if stop fails (profile is still active)
       queryClient.setQueryData(["http://localhost:5050/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
-            ? { ...profile, status: "RUNNING" }
+            ? { ...profile, status: "active" }
             : profile
         );
       });

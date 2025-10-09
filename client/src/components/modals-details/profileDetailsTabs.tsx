@@ -191,7 +191,7 @@ export default function ProfileDetailsTabs({
 
       <div className="mt-4">
         {/* General Tab */}
-        <TabsContent value="general" className="space-y-3 w-full min-w-0 max-h-[45vh] overflow-y-auto">
+        <TabsContent value="general" className="space-y-3 w-full min-w-0">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="profile-id">Profile ID</Label>
@@ -366,7 +366,7 @@ export default function ProfileDetailsTabs({
         </TabsContent>
 
         {/* Browser Tab */}
-        <TabsContent value="browser" className="space-y-3 w-full min-w-0 max-h-[45vh] overflow-y-auto">
+        <TabsContent value="browser" className="space-y-3 w-full min-w-0">
           <div className="space-y-4">
             <div>
               <Label htmlFor="user-agent">User Agent</Label>
@@ -518,7 +518,7 @@ export default function ProfileDetailsTabs({
         </TabsContent>
 
         {/* Proxy Tab */}
-        <TabsContent value="proxy" className="space-y-3 w-full min-w-0 max-h-[45vh] overflow-y-auto">
+        <TabsContent value="proxy" className="space-y-3 w-full min-w-0">
           <div className="space-y-4">
             <div className="flex items-center space-x-2">
               <Switch
@@ -646,7 +646,7 @@ export default function ProfileDetailsTabs({
         </TabsContent>
 
         {/* Apps Tab */}
-        <TabsContent value="apps" className="space-y-4 w-full min-w-0 max-h-[45vh] overflow-y-auto">
+        <TabsContent value="apps" className="space-y-4 w-full min-w-0">
           <div className="space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-gray-900 mb-2">Available Apps</h3>

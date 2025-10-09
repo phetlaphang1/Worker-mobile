@@ -2,14 +2,20 @@ import LDPlayerController from '../core/LDPlayerController.js';
 import TwitterMobileAutomation from '../automation/TwitterMobileAutomation.js';
 import TwitterAppManager from './TwitterAppManager.js';
 import ProfileManager, { MobileProfile } from './ProfileManager.js';
+import AppiumScriptService from './AppiumScriptService.js';
+import DirectMobileScriptService from './DirectMobileScriptService.js';
 import { logger } from '../utils/logger.js';
 import axios from 'axios';
 
+// WebSocket broadcast function (will be injected from server)
+export type BroadcastFunction = (type: string, data: any) => void;
+
 export interface Task {
   id: string;
-  type: 'twitter_like' | 'twitter_follow' | 'twitter_retweet' | 'twitter_comment' | 'twitter_post' | 'custom';
+  type: 'twitter_like' | 'twitter_follow' | 'twitter_retweet' | 'twitter_comment' | 'twitter_post' | 'custom' | 'appium_script';
   profileId: number | '';
   data: Record<string, any>;
+  scriptCode?: string; // For appium_script type - JavaScript code to execute
   status: 'pending' | 'running' | 'completed' | 'failed';
   priority: number;
   createdAt: Date;
@@ -19,6 +25,8 @@ export interface Task {
   error?: string;
   retryCount: number;
   maxRetries: number;
+  logs?: string[]; // Execution logs
+  source?: 'task_center' | 'api' | 'manual'; // Track where task came from
 }
 
 export interface TaskExecutorConfig {
@@ -33,25 +41,34 @@ export class TaskExecutor {
   private controller: LDPlayerController;
   private profileManager: ProfileManager;
   private twitterAppManager: TwitterAppManager;
+  private appiumScriptService?: AppiumScriptService | DirectMobileScriptService;
   private tasks: Map<string, Task> = new Map();
   private runningTasks: Map<string, Promise<void>> = new Map();
   private config: TaskExecutorConfig;
   private isRunning: boolean = false;
   private taskCheckInterval?: NodeJS.Timeout;
+  private broadcast?: BroadcastFunction;
 
   constructor(
     controller: LDPlayerController,
     profileManager: ProfileManager,
-    config: TaskExecutorConfig = {}
+    config: TaskExecutorConfig = {},
+    appiumScriptService?: AppiumScriptService | DirectMobileScriptService
   ) {
     this.controller = controller;
     this.profileManager = profileManager;
     this.twitterAppManager = new TwitterAppManager(controller);
+    this.appiumScriptService = appiumScriptService;
     this.config = {
       maxConcurrentTasks: 3,
       taskCheckInterval: 30000, // 30 seconds
       ...config
     };
+  }
+
+  // Set broadcast function for WebSocket updates
+  setBroadcast(broadcast: BroadcastFunction) {
+    this.broadcast = broadcast;
   }
 
   // Start task executor
@@ -150,6 +167,9 @@ export class TaskExecutor {
       task.startedAt = new Date();
       logger.info(`Starting task ${task.id}: ${task.type}`);
 
+      // Broadcast task started
+      this.broadcastTaskUpdate(task, 'task_started');
+
       // Check profileId
       if (!task.profileId) {
         throw new Error(`Task ${task.id} has no profile assigned`);
@@ -190,6 +210,10 @@ export class TaskExecutor {
           result = await this.executeTwitterPost(profile, task.data);
           break;
 
+        case 'appium_script':
+          result = await this.executeAppiumScript(profile, task);
+          break;
+
         case 'custom':
           result = await this.executeCustomTask(profile, task.data);
           break;
@@ -205,6 +229,9 @@ export class TaskExecutor {
 
       logger.info(`Task ${task.id} completed successfully`);
 
+      // Broadcast task completed
+      this.broadcastTaskUpdate(task, 'task_completed');
+
       // Report to Task Center if configured
       if (this.config.taskCenterUrl) {
         await this.reportTaskCompletion(task);
@@ -219,11 +246,33 @@ export class TaskExecutor {
       if (task.retryCount < task.maxRetries) {
         task.status = 'pending'; // Retry
         logger.info(`Task ${task.id} will be retried (${task.retryCount}/${task.maxRetries})`);
+        this.broadcastTaskUpdate(task, 'task_retry');
       } else {
         task.status = 'failed';
         task.completedAt = new Date();
         task.error = error instanceof Error ? error.message : String(error);
+        this.broadcastTaskUpdate(task, 'task_failed');
       }
+    }
+  }
+
+  // Broadcast task updates via WebSocket
+  private broadcastTaskUpdate(task: Task, event: string) {
+    if (this.broadcast) {
+      this.broadcast(event, {
+        id: task.id,
+        type: task.type,
+        profileId: task.profileId,
+        status: task.status,
+        progress: task.status === 'running' ? 50 : task.status === 'completed' ? 100 : 0,
+        result: task.result,
+        error: task.error,
+        logs: task.logs,
+        source: task.source,
+        createdAt: task.createdAt,
+        startedAt: task.startedAt,
+        completedAt: task.completedAt
+      });
     }
   }
 
@@ -274,6 +323,44 @@ export class TaskExecutor {
         media: data.media,
         poll: data.poll
       });
+    });
+  }
+
+  private async executeAppiumScript(profile: MobileProfile, task: Task): Promise<any> {
+    if (!this.appiumScriptService) {
+      throw new Error('AppiumScriptService not initialized');
+    }
+
+    if (!task.scriptCode) {
+      throw new Error('No script code provided for appium_script task');
+    }
+
+    logger.info(`Executing Appium script for profile ${profile.name}`);
+
+    // Create Appium script task
+    const appiumTask = await this.appiumScriptService.queueScript(task.scriptCode, profile.id);
+
+    // Wait for script execution to complete
+    return new Promise((resolve, reject) => {
+      const checkInterval = setInterval(() => {
+        const currentTask = this.appiumScriptService!.getTask(appiumTask.id);
+
+        if (currentTask?.status === 'completed') {
+          clearInterval(checkInterval);
+          task.logs = currentTask.logs;
+          resolve(currentTask.result);
+        } else if (currentTask?.status === 'failed') {
+          clearInterval(checkInterval);
+          task.logs = currentTask.logs;
+          reject(new Error(currentTask.error || 'Script execution failed'));
+        }
+      }, 500);
+
+      // Timeout after 10 minutes
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        reject(new Error('Script execution timeout'));
+      }, 600000);
     });
   }
 
@@ -343,14 +430,26 @@ export class TaskExecutor {
     }
 
     try {
+      // Prepare payload with comprehensive task data
+      const payload = {
+        status: task.status,
+        result: task.result,
+        error: task.error,
+        logs: task.logs,
+        completedAt: task.completedAt,
+        startedAt: task.startedAt,
+        duration: task.completedAt && task.startedAt
+          ? task.completedAt.getTime() - task.startedAt.getTime()
+          : null,
+        retryCount: task.retryCount,
+        profileId: task.profileId,
+        type: task.type,
+        source: task.source
+      };
+
       await axios.post(
         `${this.config.taskCenterUrl}/api/tasks/${task.id}/complete`,
-        {
-          status: task.status,
-          result: task.result,
-          error: task.error,
-          completedAt: task.completedAt
-        },
+        payload,
         {
           headers: {
             'Authorization': `Bearer ${this.config.taskCenterApiKey}`,

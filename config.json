@@ -1,0 +1,19 @@
+{
+  "ldPlayerPath": "D:\\LDPlayer\\LDPlayer9",
+  "ldConsolePath": "D:\\LDPlayer\\LDPlayer9\\ldconsole.exe",
+  "adbPath": "D:\\LDPlayer\\LDPlayer9\\adb.exe",
+  "port": 5050,
+  "concurrencyLimit": 3,
+  "screenshotsDir": "./screenshots",
+  "logsDir": "./logs",
+  "defaultInstances": [
+    { "name": "X-NODE-1", "adbPort": 5555 },
+    { "name": "X-NODE-2", "adbPort": 5557 },
+    { "name": "X-NODE-3", "adbPort": 5559 }
+  ],
+  "timeouts": {
+    "deviceReady": 60000,
+    "install": 120000,
+    "launch": 30000
+  }
+}

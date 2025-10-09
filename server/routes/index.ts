@@ -10,16 +10,19 @@ import { logger } from '../utils/logger.js';
 import { mockSettings, mockStatistics } from './mockData.js';
 import { getAutoInstallApps } from '../config/apps.config.js';
 
+import DirectMobileScriptService from '../services/DirectMobileScriptService.js';
+
 interface RouteServices {
   ldPlayerController: LDPlayerController;
   profileManager: ProfileManager;
   taskExecutor: TaskExecutor;
   scriptExecutor: MobileScriptExecutor;
   appiumScriptService?: AppiumScriptService;
+  directScriptService?: DirectMobileScriptService;
 }
 
 export function setupRoutes(app: Express, services: RouteServices) {
-  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService } = services;
+  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService } = services;
 
   // Setup authentication routes first
   setupAuthRoutes(app);
@@ -276,6 +279,124 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
+  // Scan installed apps on profile/instance
+  app.get('/api/profiles/:profileId/installed-apps', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Get installed apps via ADB
+      const apps = await ldPlayerController.getInstalledApps(profile.port);
+
+      // Update profile with detected apps
+      const appsObject: Record<string, any> = {};
+      apps.forEach(app => {
+        appsObject[app.packageName] = {
+          installed: true,
+          packageName: app.packageName,
+          appName: app.appName
+        };
+      });
+
+      // Update profile
+      await profileManager.updateProfile(profileId, {
+        apps: appsObject
+      });
+
+      logger.info(`Scanned ${apps.length} apps for profile ${profile.name}`);
+      res.json({ apps, count: apps.length });
+
+    } catch (error) {
+      logger.error('Error scanning installed apps:', error);
+      res.status(500).json({ error: 'Failed to scan installed apps' });
+    }
+  });
+
+  // Scan apps for all active profiles
+  app.post('/api/profiles/scan-all-apps', async (req: Request, res: Response) => {
+    try {
+      const profiles = profileManager.getAllProfiles();
+      const results = [];
+
+      for (const profile of profiles) {
+        if (profile.status === 'active') {
+          try {
+            const apps = await ldPlayerController.getInstalledApps(profile.port);
+
+            // Update profile
+            const appsObject: Record<string, any> = {};
+            apps.forEach(app => {
+              appsObject[app.packageName] = {
+                installed: true,
+                packageName: app.packageName,
+                appName: app.appName
+              };
+            });
+
+            await profileManager.updateProfile(profile.id, {
+              apps: appsObject
+            });
+
+            results.push({
+              profileId: profile.id,
+              profileName: profile.name,
+              appsCount: apps.length,
+              apps
+            });
+
+            logger.info(`Scanned ${apps.length} apps for profile ${profile.name}`);
+          } catch (error) {
+            logger.error(`Failed to scan apps for profile ${profile.name}:`, error);
+            results.push({
+              profileId: profile.id,
+              profileName: profile.name,
+              error: 'Failed to scan apps'
+            });
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        scannedProfiles: results.length,
+        results
+      });
+
+    } catch (error) {
+      logger.error('Error scanning all apps:', error);
+      res.status(500).json({ error: 'Failed to scan all apps' });
+    }
+  });
+
+  // Check if specific apps are installed
+  app.post('/api/profiles/:profileId/check-apps', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const { packageNames } = req.body;
+
+      if (!Array.isArray(packageNames)) {
+        return res.status(400).json({ error: 'packageNames must be an array' });
+      }
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      const results = await ldPlayerController.checkAppsInstalled(profile.port, packageNames);
+
+      res.json({ results });
+
+    } catch (error) {
+      logger.error('Error checking apps:', error);
+      res.status(500).json({ error: 'Failed to check apps' });
+    }
+  });
+
   // Task routes
   app.get('/api/tasks', (req: Request, res: Response) => {
     try {
@@ -489,8 +610,38 @@ export function setupRoutes(app: Express, services: RouteServices) {
     try {
       const profileId = parseInt(req.params.id);
       const { headless = false } = req.body;
-      await profileManager.activateProfile(profileId);
-      res.json({ success: true, message: 'Profile launched' });
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Activate profile if not already active
+      if (profile.status !== 'active') {
+        await profileManager.activateProfile(profileId);
+      }
+
+      // Execute script if exists in profile metadata
+      const scriptContent = profile.metadata?.scriptContent;
+      if (scriptContent && scriptContent.trim() !== '') {
+        if (!directScriptService) {
+          return res.status(500).json({ error: 'Direct Script Service not initialized' });
+        }
+
+        logger.info(`Executing script for profile ${profile.name}`);
+        const task = await directScriptService.queueScript(scriptContent, profileId);
+
+        res.json({
+          success: true,
+          message: 'Profile launched and script executing',
+          execution: {
+            taskId: task.id,
+            status: task.status
+          }
+        });
+      } else {
+        res.json({ success: true, message: 'Profile launched (no script to execute)' });
+      }
     } catch (error) {
       logger.error('Error launching profile:', error);
       res.status(500).json({ error: 'Failed to launch profile' });
@@ -737,6 +888,228 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error clearing completed tasks:', error);
       res.status(500).json({ error: 'Failed to clear completed tasks' });
+    }
+  });
+
+  // ============================================
+  // Direct Mobile Script Routes (ADB-based, NO Appium server needed!)
+  // ============================================
+
+  // Execute JavaScript code using ADB directly (like Puppeteer!)
+  app.post('/api/direct/execute', async (req: Request, res: Response) => {
+    try {
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      const { profileId, scriptCode } = req.body;
+
+      if (!profileId || !scriptCode) {
+        return res.status(400).json({ error: 'profileId and scriptCode are required' });
+      }
+
+      const task = await directScriptService.queueScript(scriptCode, profileId);
+      res.json({ success: true, task });
+    } catch (error) {
+      logger.error('Error executing direct script:', error);
+      res.status(500).json({ error: 'Failed to execute direct script' });
+    }
+  });
+
+  // Get all direct script tasks
+  app.get('/api/direct/tasks', (req: Request, res: Response) => {
+    try {
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      const tasks = directScriptService.getAllTasks();
+      res.json(tasks);
+    } catch (error) {
+      logger.error('Error getting direct tasks:', error);
+      res.status(500).json({ error: 'Failed to get direct tasks' });
+    }
+  });
+
+  // Get specific direct task by ID
+  app.get('/api/direct/tasks/:taskId', (req: Request, res: Response) => {
+    try {
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      const task = directScriptService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+      res.json(task);
+    } catch (error) {
+      logger.error('Error getting direct task:', error);
+      res.status(500).json({ error: 'Failed to get direct task' });
+    }
+  });
+
+  // Get direct tasks for specific profile
+  app.get('/api/direct/profiles/:profileId/tasks', (req: Request, res: Response) => {
+    try {
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      const profileId = parseInt(req.params.profileId);
+      const tasks = directScriptService.getTasksForProfile(profileId);
+      res.json(tasks);
+    } catch (error) {
+      logger.error('Error getting profile direct tasks:', error);
+      res.status(500).json({ error: 'Failed to get profile direct tasks' });
+    }
+  });
+
+  // Clear completed direct tasks
+  app.post('/api/direct/tasks/clear-completed', (req: Request, res: Response) => {
+    try {
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      directScriptService.clearCompletedTasks();
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Error clearing completed direct tasks:', error);
+      res.status(500).json({ error: 'Failed to clear completed direct tasks' });
+    }
+  });
+
+  // ============================================
+  // Task Center Integration - Webhook Endpoints
+  // ============================================
+
+  /**
+   * Webhook endpoint for Task Center to send JS scripts
+   * Task Center will POST to this endpoint with script data
+   */
+  app.post('/api/task-center/webhook/script', async (req: Request, res: Response) => {
+    try {
+      const {
+        taskId,
+        scriptCode,
+        profileId,
+        priority = 5,
+        metadata = {},
+        apiKey
+      } = req.body;
+
+      // Verify API key if configured
+      const expectedApiKey = process.env.TASK_CENTER_API_KEY;
+      if (expectedApiKey && apiKey !== expectedApiKey) {
+        logger.warn('Task Center webhook: Invalid API key');
+        return res.status(401).json({ error: 'Invalid API key' });
+      }
+
+      // Validate required fields
+      if (!scriptCode) {
+        return res.status(400).json({ error: 'scriptCode is required' });
+      }
+
+      // Create task in TaskExecutor
+      const task = await taskExecutor.addTask({
+        type: 'appium_script',
+        profileId: profileId || '', // Will be assigned to available profile if empty
+        scriptCode,
+        data: metadata,
+        priority,
+        maxRetries: 3,
+        source: 'task_center'
+      });
+
+      logger.info(`Received script from Task Center: ${task.id}${taskId ? ` (Task Center ID: ${taskId})` : ''}`);
+
+      res.json({
+        success: true,
+        taskId: task.id,
+        message: 'Script queued for execution',
+        status: task.status
+      });
+    } catch (error) {
+      logger.error('Error handling Task Center webhook:', error);
+      res.status(500).json({ error: 'Failed to queue script' });
+    }
+  });
+
+  /**
+   * Get task status for Task Center
+   */
+  app.get('/api/task-center/tasks/:taskId/status', (req: Request, res: Response) => {
+    try {
+      const { taskId } = req.params;
+      const task = taskExecutor.getTask(taskId);
+
+      if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      res.json({
+        id: task.id,
+        status: task.status,
+        progress: task.status === 'running' ? 50 : task.status === 'completed' ? 100 : 0,
+        result: task.result,
+        error: task.error,
+        logs: task.logs,
+        createdAt: task.createdAt,
+        startedAt: task.startedAt,
+        completedAt: task.completedAt
+      });
+    } catch (error) {
+      logger.error('Error getting task status:', error);
+      res.status(500).json({ error: 'Failed to get task status' });
+    }
+  });
+
+  /**
+   * Batch endpoint: Task Center sends multiple scripts at once
+   */
+  app.post('/api/task-center/webhook/scripts/batch', async (req: Request, res: Response) => {
+    try {
+      const { scripts, apiKey } = req.body;
+
+      // Verify API key
+      const expectedApiKey = process.env.TASK_CENTER_API_KEY;
+      if (expectedApiKey && apiKey !== expectedApiKey) {
+        return res.status(401).json({ error: 'Invalid API key' });
+      }
+
+      if (!Array.isArray(scripts)) {
+        return res.status(400).json({ error: 'scripts must be an array' });
+      }
+
+      const tasks = [];
+      for (const script of scripts) {
+        const task = await taskExecutor.addTask({
+          type: 'appium_script',
+          profileId: script.profileId || '',
+          scriptCode: script.scriptCode,
+          data: script.metadata || {},
+          priority: script.priority || 5,
+          maxRetries: 3,
+          source: 'task_center'
+        });
+        tasks.push({
+          taskId: task.id,
+          status: task.status,
+          originalId: script.taskId
+        });
+      }
+
+      logger.info(`Received ${scripts.length} scripts from Task Center in batch`);
+
+      res.json({
+        success: true,
+        count: tasks.length,
+        tasks
+      });
+    } catch (error) {
+      logger.error('Error handling batch webhook:', error);
+      res.status(500).json({ error: 'Failed to queue scripts' });
     }
   });
 

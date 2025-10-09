@@ -283,15 +283,37 @@ export default function InstanceManager({
 
   const handleRunAll = async () => {
     setIsRunningAll(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
-      const promises = profiles.map(profile =>
-        launchProfileMutation.mutateAsync({ profileId: profile.id })
-      );
-      await Promise.all(promises);
-      toast({
-        title: "Success",
-        description: `Started ${profiles.length} instances`,
-      });
+      // Run sequentially with delay to avoid overwhelming system
+      for (const profile of profiles) {
+        try {
+          await launchProfileMutation.mutateAsync({ profileId: profile.id });
+          successCount++;
+          // Add delay between launches
+          if (successCount < profiles.length) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        } catch (error) {
+          console.error(`Failed to launch profile ${profile.id}:`, error);
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast({
+          title: "Run All Complete",
+          description: `Started ${successCount} instance${successCount > 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
+        });
+      } else {
+        toast({
+          title: "Run All Failed",
+          description: "No instances were started successfully",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -305,15 +327,37 @@ export default function InstanceManager({
 
   const handleStopAll = async () => {
     setIsStoppingAll(true);
+    let successCount = 0;
+    let failCount = 0;
+
     try {
-      const promises = profiles.map(profile =>
-        stopProfileMutation.mutateAsync({ profileId: profile.id })
-      );
-      await Promise.all(promises);
-      toast({
-        title: "Success",
-        description: `Stopped ${profiles.length} instances`,
-      });
+      // Stop sequentially with delay
+      for (const profile of profiles) {
+        try {
+          await stopProfileMutation.mutateAsync({ profileId: profile.id });
+          successCount++;
+          // Add small delay between stops
+          if (successCount < profiles.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (error) {
+          console.error(`Failed to stop profile ${profile.id}:`, error);
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast({
+          title: "Stop All Complete",
+          description: `Stopped ${successCount} instance${successCount > 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
+        });
+      } else {
+        toast({
+          title: "Stop All Failed",
+          description: "No instances were stopped successfully",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
         title: "Error",

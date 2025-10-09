@@ -9,6 +9,7 @@ import ProfileManager from './services/ProfileManager.js';
 import TaskExecutor from './services/TaskExecutor.js';
 import MobileScriptExecutor from './services/MobileScriptExecutor.js';
 import AppiumScriptService from './services/AppiumScriptService.js';
+import DirectMobileScriptService from './services/DirectMobileScriptService.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
@@ -47,18 +48,55 @@ const wss = new WebSocketServer({ server });
 // Initialize core services
 const ldPlayerController = new LDPlayerController();
 const profileManager = new ProfileManager(ldPlayerController);
+
+// Script services - Choose one or use both!
+const appiumScriptService = new AppiumScriptService(ldPlayerController, profileManager); // Needs Appium server
+const directScriptService = new DirectMobileScriptService(ldPlayerController, profileManager); // ADB only, no server!
+
+// TaskExecutor can use either service
+// For simplicity, we default to DirectScriptService (no Appium server needed)
 const taskExecutor = new TaskExecutor(ldPlayerController, profileManager, {
   taskCenterUrl: process.env.TASK_CENTER_URL,
   taskCenterApiKey: process.env.TASK_CENTER_API_KEY,
   taskCenterUserId: process.env.TASK_CENTER_USER_ID,
   maxConcurrentTasks: 5,
   taskCheckInterval: 30000
-});
+}, directScriptService); // Using ADB-based service by default
+
 const scriptExecutor = new MobileScriptExecutor(ldPlayerController, profileManager);
-const appiumScriptService = new AppiumScriptService(ldPlayerController, profileManager);
 
 // Inject scriptExecutor into profileManager (to avoid circular dependency)
 profileManager.setScriptExecutor(scriptExecutor);
+
+// Broadcast log function will be defined after clientSubscriptions
+// We'll set it up after the WebSocket server is configured
+
+// Track client subscriptions for logs
+// Map: clientId -> { type: 'task'|'profile', id: number }
+const clientSubscriptions = new Map<any, { type: string; id: number }>();
+
+// Broadcast log to subscribed clients
+function broadcastLog(logType: 'task' | 'profile', id: number, logMessage: string, timestamp: string): void {
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) { // WebSocket.OPEN
+      const subscription = clientSubscriptions.get(client);
+
+      // Only send to clients subscribed to this specific type and id
+      if (subscription && subscription.type === logType && subscription.id === id) {
+        client.send(JSON.stringify({
+          type: logType,
+          id: id,
+          message: logMessage,
+          timestamp: timestamp
+        }));
+      }
+    }
+  });
+}
+
+// Inject broadcast functions into services for WebSocket updates
+taskExecutor.setBroadcast(broadcast);
+directScriptService.setBroadcast(broadcastLog);
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
@@ -69,6 +107,17 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(message.toString());
 
       switch (data.type) {
+        case 'task':
+        case 'profile':
+          // Client subscribing to logs for a specific task or profile
+          clientSubscriptions.set(ws, { type: data.type, id: data.id });
+          logger.info(`Client subscribed to ${data.type} logs for ID: ${data.id}`);
+          ws.send(JSON.stringify({
+            type: 'subscribed',
+            message: `Subscribed to ${data.type} ${data.id} logs`
+          }));
+          break;
+
         case 'get_status':
           ws.send(JSON.stringify({
             type: 'status',
@@ -124,7 +173,8 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    logger.info('WebSocket connection closed');
+    clientSubscriptions.delete(ws);
+    logger.info('WebSocket connection closed and subscription removed');
   });
 
   ws.on('error', (error) => {
@@ -132,7 +182,7 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Broadcast function for real-time updates
+// Broadcast function for real-time updates (general broadcasts)
 export function broadcast(type: string, data: any): void {
   const message = JSON.stringify({ type, data });
 
@@ -149,7 +199,8 @@ setupRoutes(app, {
   profileManager,
   taskExecutor,
   scriptExecutor,
-  appiumScriptService
+  appiumScriptService, // For advanced users who want Appium
+  directScriptService // For most users - simple ADB automation
 });
 
 // Serve React app for all non-API routes

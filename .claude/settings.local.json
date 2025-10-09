@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(adb:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tasklist)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" list2)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" adb --name \"test21323\" --command \"devices\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" getprop --name \"test21323\" --key \"adb_debug_port\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\adb.exe\" connect 127.0.0.1:5572)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" setprop --name \"test21323\" --key \"adb.debug\" --value \"1\")",
+      "Bash(dir:*)",
+      "Read(//d/LDPlayer/LDPlayer9/vms/leidian9/**)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" reboot --name \"test21323\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" adb --name \"test21323\" --command \"shell input keyevent KEYCODE_HOME\")",
+      "Bash(powershell:*)",
+      "Bash(taskkill:*)",
+      "Read(//d/**)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\adb.exe\" devices)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:client:*)",
+      "Bash(npm run build:server:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

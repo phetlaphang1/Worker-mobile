@@ -175,7 +175,7 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
               </TableCell>
               <TableCell className="text-right py-1">
                 <ExecutionActions
-                  isRunning={profile.status === 'RUNNING'}
+                  isRunning={profile.status === 'active'}
                   onRun={() => onRunProfile(profile.id)}
                   onStop={() => onStopProfile(profile.id)}
                   onViewLog={() => onLogClick(profile)}

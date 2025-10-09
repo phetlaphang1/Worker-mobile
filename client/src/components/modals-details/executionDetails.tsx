@@ -194,42 +194,42 @@ export function LogDetailsModal({ isOpen, onClose, title, content, type, id }: L
   
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[85vh] w-[90vw] bg-white text-gray-900">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-gray-900">
+      <DialogContent className="max-w-6xl h-[90vh] w-[90vw] flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
             {title}
             {id && isConnected && (
-              <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
+              <Badge variant="outline" className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400 text-xs bg-green-50 dark:bg-green-900/30">
                 Live Updates
               </Badge>
             )}
             {id && !isConnected && (
-              <Badge variant="outline" className="text-gray-600 border-gray-600 text-xs">
+              <Badge variant="outline" className="text-gray-600 dark:text-gray-400 border-gray-600 dark:border-gray-400 text-xs">
                 Static
               </Badge>
             )}
           </DialogTitle>
         </DialogHeader>
-        <div className="mt-4">
-          <div className="bg-gray-50 text-gray-900 rounded-md font-mono text-sm max-h-[65vh] overflow-y-auto border border-gray-300">
+        <div className="flex-1 mt-4 flex flex-col min-h-0">
+          <div className="flex-1 bg-gray-900 dark:bg-black text-gray-100 rounded-md font-mono text-sm overflow-y-auto border border-gray-700 dark:border-gray-600 shadow-inner">
             {allLogs.map((line, index) => (
-              <div key={index} className="flex border-b border-gray-200 last:border-b-0">
-                <div className="w-12 bg-gray-200 text-gray-600 text-right px-2 py-1 text-xs border-r border-gray-300 select-none flex-shrink-0">
+              <div key={index} className="flex border-b border-gray-800 dark:border-gray-700 last:border-b-0 hover:bg-gray-800 dark:hover:bg-gray-900">
+                <div className="w-14 bg-gray-800 dark:bg-gray-950 text-gray-400 text-right px-3 py-1.5 text-xs border-r border-gray-700 dark:border-gray-600 select-none flex-shrink-0 font-semibold">
                   {index + 1}
                 </div>
-                <div className="flex-1 px-4 py-1 whitespace-pre-wrap break-all">
+                <div className="flex-1 px-4 py-1.5 whitespace-pre-wrap break-all text-gray-200 dark:text-gray-300">
                   {line}
                 </div>
               </div>
             ))}
             <div ref={messagesEndRef} />
           </div>
-          <div className="flex justify-end space-x-2 mt-4">
-            <Button variant="outline" onClick={handleCopyContent}>
+          <div className="flex justify-end space-x-2 mt-4 flex-shrink-0">
+            <Button variant="outline" onClick={handleCopyContent} className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600">
               <Copy className="h-4 w-4 mr-2" />
               Copy
             </Button>
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={onClose} className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600">
               Close
             </Button>
           </div>
@@ -396,34 +396,34 @@ export function OutputDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl bg-white text-gray-900">
-        <DialogHeader>
-          <DialogTitle className="text-gray-900">{title}</DialogTitle>
+      <DialogContent className="max-w-4xl h-[85vh] flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="text-gray-900 dark:text-gray-100">{title}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="bg-gray-100 p-3 rounded border border-gray-300">
-            <p className="text-sm text-gray-700">
+        <div className="flex-1 flex flex-col space-y-4 min-h-0">
+          <div className="bg-gray-100 dark:bg-gray-800 p-3 rounded border border-gray-300 dark:border-gray-600 flex-shrink-0">
+            <p className="text-sm text-gray-700 dark:text-gray-300 font-mono">
               Path: {path}
             </p>
           </div>
-          <ScrollArea ref={scrollAreaRef} className="h-96 w-full">
+          <div className="flex-1 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800" ref={scrollAreaRef}>
             {files && files.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2 p-2">
                 {files.map((file: any, index: number) => (
                   <div
                     key={index}
-                    className="flex items-center gap-3 p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer bg-white"
+                    className="flex items-center gap-3 p-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer bg-white dark:bg-gray-800"
                     onClick={() => window.open(`${baseUrl}/output/${file.name}`, '_blank')}
                   >
                     <div className="flex-shrink-0">
                       {getFileIcon(file.name)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-blue-600 hover:text-blue-700 underline truncate">
+                      <div className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline truncate">
                         {file.name}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                        <span className="px-2 py-0.5 bg-gray-200 rounded">
+                      <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mt-1">
+                        <span className="px-2 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">
                           {getFileType(file.name)}
                         </span>
                         <span>{file.size ? `${(file.size / 1024).toFixed(1)} KB` : 'Unknown size'}</span>
@@ -447,29 +447,29 @@ export function OutputDetailsModal({
                             link.click();
                             document.body.removeChild(link);
                           }}
-                          className="text-xs h-7"
+                          className="text-xs h-7 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                         >
                           <Download className="h-3 w-3 mr-1" />
                           Download
                         </Button>
                       )}
                     </div>
-                   
+
                   </div>
-                  
+
                 ))}
-                
+
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                 No files found in output folder
               </div>
             )}
 
             <div ref={messagesEndRef} />
-          </ScrollArea>
-          <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={onClose}>
+          </div>
+          <div className="flex justify-end space-x-2 flex-shrink-0">
+            <Button variant="outline" onClick={onClose} className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600">
               Close
             </Button>
           </div>

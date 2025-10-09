@@ -350,15 +350,15 @@ export default function ProfileDetailsModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-hidden bg-white text-gray-900">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-gray-900">
+      <DialogContent className="max-w-6xl w-[95vw] h-[95vh] flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+        <DialogHeader className="flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
             <User className="h-5 w-5 text-blue-600" />
             Profile Details - {profileData.name}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="w-full min-w-0 overflow-hidden">
+        <div className="flex-1 w-full min-w-0 overflow-y-auto pr-2">
           <ProfileDetailsTabs
             profileData={profileData}
             formData={formData}
@@ -366,22 +366,22 @@ export default function ProfileDetailsModal({
             CustomFieldEditor={CustomFieldEditor}
             isTaskProfile={isTaskProfile}
           />
+        </div>
 
-          <div className="flex justify-end mt-6 pt-4 border-t">
-            <Button variant="outline" onClick={onClose} className="mr-3">
-              Close
+        <div className="flex justify-end mt-4 pt-4 border-t flex-shrink-0 bg-white dark:bg-gray-900">
+          <Button variant="outline" onClick={onClose} className="mr-3">
+            Close
+          </Button>
+          {!isTaskProfile && (
+            <Button
+              onClick={handleUpdate}
+              disabled={updateProfileMutation.isPending}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {updateProfileMutation.isPending ? "Updating..." : "Update"}
             </Button>
-            {!isTaskProfile && (
-              <Button
-                onClick={handleUpdate}
-                disabled={updateProfileMutation.isPending}
-                className="bg-blue-600 text-white hover:bg-blue-700"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {updateProfileMutation.isPending ? "Updating..." : "Update"}
-              </Button>
-            )}
-          </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
