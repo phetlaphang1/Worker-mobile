@@ -253,22 +253,23 @@ export class LDPlayerController {
 
   async cloneInstance(sourceName: string, targetName: string): Promise<LDPlayerInstance> {
     try {
-      // Check if target instance already exists (error code 19 = instance name exists)
-      const listResult = await execAsync(`"${this.ldConsolePath}" list`);
+      logger.info(`[CLONE] Starting clone process: ${sourceName} → ${targetName}`);
+
+      // Check if target instance already exists
+      const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
       const existingInstances = listResult.stdout.trim().split('\n');
       const targetExists = existingInstances.some(line => {
         const parts = line.split(',');
-        return parts[1] === targetName;
+        return parts.length >= 2 && parts[1] === targetName;
       });
 
       if (targetExists) {
-        logger.warn(`Target instance ${targetName} already exists, removing it first...`);
+        logger.warn(`[CLONE] Target instance ${targetName} already exists, removing it first...`);
         try {
           await this.removeInstance(targetName);
-          // Wait for removal to complete
           await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (removeErr) {
-          logger.error(`Failed to remove existing instance ${targetName}:`, removeErr);
+          logger.error(`[CLONE] Failed to remove existing instance ${targetName}:`, removeErr);
           throw new Error(`Instance name "${targetName}" already exists and could not be removed`);
         }
       }
@@ -279,47 +280,70 @@ export class LDPlayerController {
         const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`);
         wasRunning = runningListResult.stdout.includes(sourceName);
       } catch (err) {
-        logger.warn('Failed to check running instances, assuming instance is stopped');
+        logger.warn('[CLONE] Failed to check running instances, assuming instance is stopped');
       }
 
       // Stop source instance if it's running (ldconsole copy requires instance to be stopped)
       if (wasRunning) {
-        logger.info(`Source instance ${sourceName} is running, stopping it temporarily for cloning...`);
+        logger.info(`[CLONE] Source instance ${sourceName} is running, stopping it temporarily...`);
         await this.stopInstance(sourceName);
-        // Wait a bit for instance to fully stop
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      // Perform the clone
-      // Note: ldconsole copy may return non-zero exit code even when successful
+      // Perform the clone using LDPlayer copy command
+      // Syntax: ldconsole copy --name <new_name> --from <source_name>
+      const copyCommand = `"${this.ldConsolePath}" copy --name "${targetName}" --from "${sourceName}"`;
+      logger.info(`[CLONE] Executing: ${copyCommand}`);
+
       try {
-        await execAsync(`"${this.ldConsolePath}" copy --name "${targetName}" --from "${sourceName}"`);
+        const copyResult = await execAsync(copyCommand, { timeout: 120000 }); // 2 minute timeout
+        logger.info(`[CLONE] Copy command completed`);
+        if (copyResult.stdout && copyResult.stdout.trim()) {
+          logger.info(`[CLONE] Output: ${copyResult.stdout.trim()}`);
+        }
       } catch (copyError: any) {
-        // Check if instance was actually created despite error code
-        logger.warn(`Copy command returned error code ${copyError.code}, checking if instance was created...`);
+        logger.warn(`[CLONE] Copy command returned error code ${copyError.code || 'unknown'}`);
+        if (copyError.stdout) logger.warn(`[CLONE] stdout: ${copyError.stdout}`);
+        if (copyError.stderr) logger.warn(`[CLONE] stderr: ${copyError.stderr}`);
+        logger.warn(`[CLONE] Checking if instance was created anyway...`);
       }
 
-      // Restart source instance if it was running
+      // Restart source instance in background if it was running
       if (wasRunning) {
-        logger.info(`Restarting source instance ${sourceName}...`);
-        await this.launchInstance(sourceName);
+        logger.info(`[CLONE] Restarting source instance ${sourceName} in background...`);
+        this.launchInstance(sourceName).catch(err => {
+          logger.warn(`[CLONE] Failed to restart source instance ${sourceName}:`, err);
+        });
       }
 
-      // Get the actual index from ldconsole list and verify clone succeeded
-      const newListResult = await execAsync(`"${this.ldConsolePath}" list`);
+      // Wait for clone operation to complete and verify
+      logger.info(`[CLONE] Waiting for clone to be registered...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Get the cloned instance index
+      const newListResult = await execAsync(`"${this.ldConsolePath}" list2`);
       const lines = newListResult.stdout.trim().split('\n');
       let instanceIndex = -1;
 
       for (const line of lines) {
         const parts = line.split(',');
-        if (parts[1] === targetName) {
+        if (parts.length >= 2 && parts[1] === targetName) {
           instanceIndex = parseInt(parts[0], 10);
+          logger.info(`[CLONE] Found cloned instance: ${targetName} at index ${instanceIndex}`);
           break;
         }
       }
 
       // Verify instance was created
       if (instanceIndex === -1) {
+        logger.error(`[CLONE] Instance ${targetName} not found after copy operation`);
+        logger.error(`[CLONE] Available instances:`);
+        for (const line of lines) {
+          const parts = line.split(',');
+          if (parts.length >= 2) {
+            logger.error(`[CLONE]   - Index ${parts[0]}: ${parts[1]}`);
+          }
+        }
         throw new Error(`Failed to clone instance: ${targetName} not found in instance list after copy operation`);
       }
 
@@ -332,10 +356,12 @@ export class LDPlayerController {
       };
       this.instances.set(targetName, clonedInstance);
 
-      logger.info(`Successfully cloned instance ${sourceName} to ${targetName} (index: ${instanceIndex})`);
+      logger.info(`✅ [CLONE] Successfully cloned ${sourceName} → ${targetName} (index: ${instanceIndex})`);
+      logger.info(`[CLONE] The cloned instance includes ALL settings, configurations, and installed apps`);
+
       return clonedInstance;
     } catch (error) {
-      logger.error(`Failed to clone instance from ${sourceName} to ${targetName}:`, error);
+      logger.error(`[CLONE] Failed to clone instance from ${sourceName} to ${targetName}:`, error);
       throw error;
     }
   }
@@ -354,83 +380,152 @@ export class LDPlayerController {
     try {
       logger.info(`Getting ADB port for instance: ${instanceName}`);
 
-      // Check if instance is running
-      const runningResult = await execAsync(`"${this.ldConsolePath}" runninglist`);
-      const runningInstances = runningResult.stdout.trim().split('\n');
-      const isRunning = runningInstances.includes(instanceName);
+      // OPTIMIZATION: Check stored instance first (fastest path)
+      const storedInstance = this.instances.get(instanceName);
+      if (storedInstance) {
+        logger.info(`Found stored instance ${instanceName} with port ${storedInstance.port}`);
 
-      if (!isRunning) {
-        throw new Error(`Instance ${instanceName} is not running. Please start it first.`);
+        // Verify it's still connected
+        const devicesResult = await execAsync(`"${this.adbPath}" devices`);
+        if (devicesResult.stdout.includes(`127.0.0.1:${storedInstance.port}`) ||
+            devicesResult.stdout.includes(`emulator-${storedInstance.port}`)) {
+          logger.info(`✅ Using cached port ${storedInstance.port} for instance ${instanceName} (already connected)`);
+          return storedInstance.port;
+        }
+        logger.warn(`Stored port ${storedInstance.port} not connected, will try to connect...`);
       }
 
-      // Ensure ADB is enabled
-      logger.info(`Ensuring ADB is enabled for ${instanceName}...`);
-      try {
-        await execAsync(
-          `"${this.ldConsolePath}" setprop --name "${instanceName}" --key "adb.debug" --value "1"`
-        );
-        logger.info(`✅ ADB enabled for ${instanceName}`);
-      } catch (enableError) {
-        logger.warn(`Warning: Could not enable ADB: ${enableError}`);
-      }
-
-      // Get list of connected ADB devices
+      // Get list of ALL connected ADB devices ONCE
       const devicesResult = await execAsync(`"${this.adbPath}" devices`);
       const deviceLines = devicesResult.stdout.trim().split('\n');
 
-      // Parse device ports
-      const connectedPorts: number[] = [];
+      // Parse device ports (deduplicate: "127.0.0.1:5572" and "emulator-5572" are the same device!)
+      const connectedPorts = new Set<number>();
       for (const line of deviceLines) {
         // Match both "127.0.0.1:5572" and "emulator-5572"
-        const ipMatch = line.match(/127\.0\.0\.1:(\d+)/);
-        const emulatorMatch = line.match(/emulator-(\d+)/);
+        const ipMatch = line.match(/127\.0\.0\.1:(\d+)\s+device/);
+        const emulatorMatch = line.match(/emulator-(\d+)\s+device/);
 
         if (ipMatch) {
-          connectedPorts.push(parseInt(ipMatch[1], 10));
+          connectedPorts.add(parseInt(ipMatch[1], 10));
         } else if (emulatorMatch) {
-          connectedPorts.push(parseInt(emulatorMatch[1], 10));
+          // emulator-5572 uses port 5572 (same as 127.0.0.1:5572)
+          connectedPorts.add(parseInt(emulatorMatch[1], 10));
         }
       }
 
-      logger.info(`Found ${connectedPorts.length} connected ADB devices: ${connectedPorts.join(', ')}`);
+      const uniquePorts = Array.from(connectedPorts).sort((a, b) => a - b);
+      logger.info(`Found ${uniquePorts.length} unique connected ADB devices: ${uniquePorts.join(', ')}`);
 
-      // If we have connected ports, try to identify which one belongs to our instance
-      if (connectedPorts.length === 1) {
-        // Only one device, it must be ours
-        const port = connectedPorts[0];
+      // If we have connected ports, use them immediately (no need to try connecting)
+      if (uniquePorts.length > 0) {
+        // If stored instance port is in connected ports, use it
+        if (storedInstance && uniquePorts.includes(storedInstance.port)) {
+          logger.info(`✅ Using stored port ${storedInstance.port} for instance ${instanceName}`);
+          return storedInstance.port;
+        }
+
+        // If multiple devices, we need to query ldconsole to find the correct mapping
+        if (uniquePorts.length > 1) {
+          logger.warn(`Multiple devices connected (${uniquePorts.length}), querying ldconsole to match instance ${instanceName}...`);
+
+          // Query ldconsole list2 to get running instances
+          try {
+            const list2Result = await execAsync(`"${this.ldConsolePath}" list2`);
+            const lines = list2Result.stdout.trim().split('\n');
+
+            // Find the instance by name
+            let instanceIndex = -1;
+            for (const line of lines) {
+              const parts = line.split(',');
+              if (parts.length >= 2 && parts[1] === instanceName) {
+                instanceIndex = parseInt(parts[0], 10);
+                break;
+              }
+            }
+
+            if (instanceIndex !== -1) {
+              // Calculate expected port from index
+              const expectedPort = 5555 + instanceIndex * 2;
+
+              // Check if expected port is in the list of connected ports
+              if (uniquePorts.includes(expectedPort)) {
+                logger.info(`✅ Matched instance ${instanceName} (index ${instanceIndex}) to port ${expectedPort}`);
+                return expectedPort;
+              }
+
+              // If expected port not found, find the closest port
+              logger.warn(`Expected port ${expectedPort} not found, trying closest available port...`);
+              const closestPort = uniquePorts.reduce((prev, curr) =>
+                Math.abs(curr - expectedPort) < Math.abs(prev - expectedPort) ? curr : prev
+              );
+              logger.info(`✅ Using closest port ${closestPort} for instance ${instanceName}`);
+              return closestPort;
+            } else {
+              logger.warn(`Instance ${instanceName} not found in ldconsole list2, using first available port`);
+            }
+          } catch (ldError) {
+            logger.warn(`Failed to query ldconsole, using first available port:`, ldError);
+          }
+
+          // Fallback: use first port if ldconsole query failed
+          const port = uniquePorts[0];
+          logger.info(`✅ Using first available port ${port} for instance ${instanceName}`);
+          return port;
+        }
+
+        // Only one device connected
+        const port = uniquePorts[0];
         logger.info(`✅ Using port ${port} (only device connected)`);
         return port;
       }
 
-      // Try to connect to common ports and test
-      const portsToTry = [5555, 5557, 5559, 5561, 5563, 5565, 5567, 5569, 5571, 5573, 5575];
+      // NO connected devices - try to connect to common ports (this is the slow path)
+      logger.warn(`No ADB devices connected, trying to connect...`);
 
-      for (const port of portsToTry) {
+      // Try stored port first if available
+      if (storedInstance) {
         try {
-          // Try to connect
-          await execAsync(`"${this.adbPath}" connect 127.0.0.1:${port}`);
+          await Promise.race([
+            execAsync(`"${this.adbPath}" connect 127.0.0.1:${storedInstance.port}`),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
+          ]);
 
-          // Test connection by running a simple command
-          const testResult = await execAsync(`"${this.adbPath}" -s 127.0.0.1:${port} shell getprop ro.product.model`);
-
-          if (testResult.stdout.trim()) {
-            logger.info(`✅ Successfully connected to port ${port}`);
-            return port;
+          // Verify connection
+          const recheckResult = await execAsync(`"${this.adbPath}" devices`);
+          if (recheckResult.stdout.includes(`127.0.0.1:${storedInstance.port}`) ||
+              recheckResult.stdout.includes(`emulator-${storedInstance.port}`)) {
+            logger.info(`✅ Connected to stored port ${storedInstance.port}`);
+            return storedInstance.port;
           }
         } catch (error) {
-          // Port not available, try next
-          continue;
+          logger.debug(`Failed to connect to stored port ${storedInstance.port}, trying other ports...`);
         }
       }
 
-      // If all fails, return the first connected port
-      if (connectedPorts.length > 0) {
-        const port = connectedPorts[0];
-        logger.warn(`Using first available port ${port} as fallback`);
-        return port;
+      // Try common ports (last resort)
+      const portsToTry = [5555, 5557, 5559, 5561, 5563, 5565, 5567, 5569, 5571, 5573, 5575, 5577, 5579, 5581];
+
+      for (const port of portsToTry) {
+        try {
+          // Shorter timeout for faster parallel execution
+          await Promise.race([
+            execAsync(`"${this.adbPath}" connect 127.0.0.1:${port}`),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1000))
+          ]);
+
+          // Check if connected successfully
+          const recheckResult = await execAsync(`"${this.adbPath}" devices`);
+          if (recheckResult.stdout.includes(`127.0.0.1:${port}`) || recheckResult.stdout.includes(`emulator-${port}`)) {
+            logger.info(`✅ Connected to port ${port}`);
+            return port;
+          }
+        } catch (error) {
+          // Port not available, continue to next
+        }
       }
 
-      throw new Error(`Could not determine ADB port for ${instanceName}. No devices found.`);
+      throw new Error(`No ADB devices found. Please ensure instances are running and ADB debugging is enabled.`);
 
     } catch (error: any) {
       logger.error(`Failed to get ADB port for ${instanceName}:`, error.message);

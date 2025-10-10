@@ -146,8 +146,10 @@ export class ProfileManager {
       const profileId = this.generateProfileId();
       // Use provided name or generate default
       const displayName = config.name || `Instance_${profileId}`;
-      // Instance name for LDPlayer (sanitized)
-      const instanceName = displayName.replace(/[^a-zA-Z0-9-_]/g, '_');
+      // Instance name for LDPlayer: sanitized + profile ID for uniqueness
+      // This prevents naming conflicts when multiple instances have similar names
+      const baseName = displayName.replace(/[^a-zA-Z0-9-_]/g, '_');
+      const instanceName = `${baseName}_${profileId}`;
       const port = 5555 + this.profiles.size * 2;
 
       // Default settings
@@ -481,9 +483,9 @@ export class ProfileManager {
     }
   }
 
-  // Clone profile (including apps)
+  // Clone profile (always includes all apps and configurations)
+  // Note: LDPlayer's copy command always clones everything - we cannot selectively exclude apps
   async cloneProfile(profileId: number, newName: string, options?: {
-    copyApps?: boolean;
     launchAndSetup?: boolean;
   }): Promise<MobileProfile> {
     const originalProfile = this.profiles.get(profileId);
@@ -491,23 +493,33 @@ export class ProfileManager {
       throw new Error(`Profile ${profileId} not found`);
     }
 
+    // Clone instance WITH all apps using LDPlayer copy command
+    logger.info(`Cloning instance from ${originalProfile.name} to ${newName}`);
+    logger.info(`This will copy ALL settings, configurations, and installed applications`);
+
+    const newProfileId = this.generateProfileId();
+    // Create unique instance name: sanitize + add profile ID to ensure uniqueness
+    // This prevents naming conflicts when multiple instances have similar names
+    const baseName = newName.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const newInstanceName = `${baseName}_${newProfileId}`;
+
     let clonedProfile: MobileProfile;
 
-    if (options?.copyApps) {
-      // Clone instance WITH apps using LDPlayer copy command
-      logger.info(`Cloning instance with apps from ${originalProfile.name} to ${newName}`);
-
-      const newProfileId = this.generateProfileId();
-      // Use newName directly as instance name (sanitized for LDPlayer)
-      const newInstanceName = newName.replace(/[^a-zA-Z0-9-_]/g, '_');
-
-      // Clone LDPlayer instance (includes all apps)
+    try {
+      // Clone LDPlayer instance (includes ALL apps and configurations)
+      // Note: LDPlayerController.cloneInstance will handle stopping/restarting source if needed
       const clonedInstance = await this.controller.cloneInstance(
         originalProfile.instanceName,
         newInstanceName
       );
 
+      logger.info(`LDPlayer instance cloned successfully (index: ${clonedInstance.index}, port: ${clonedInstance.port})`);
+
+      // Wait a bit for instance to be fully registered
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Create profile object from cloned instance
+      // Deep clone all configurations to ensure the new profile is completely independent
       clonedProfile = {
         id: newProfileId,
         name: newName,
@@ -526,30 +538,31 @@ export class ProfileManager {
       // Register instance in controller
       this.controller.getInstance(newInstanceName); // This ensures it's tracked
 
-      logger.info(`Instance cloned with apps successfully (index: ${clonedInstance.index})`);
-    } else {
-      // Create new empty profile (no apps)
-      logger.info(`Creating new profile without apps: ${newName}`);
-
-      clonedProfile = await this.createProfile({
-        name: newName,
-        settings: originalProfile.settings,
-        device: originalProfile.device,
-        network: originalProfile.network,
-        location: originalProfile.location
-      });
+      logger.info(`Profile created for cloned instance (ID: ${newProfileId})`);
+    } catch (cloneError) {
+      logger.error(`Failed to clone instance: ${cloneError}`);
+      throw new Error(`Failed to clone instance ${originalProfile.name}: ${cloneError instanceof Error ? cloneError.message : String(cloneError)}`);
     }
 
     // Save profile
     this.profiles.set(clonedProfile.id, clonedProfile);
     await this.saveProfile(clonedProfile);
 
+    logger.info(`Profile saved: ${newName} (ID: ${clonedProfile.id})`);
+
     // Auto-launch and setup if requested
     if (options?.launchAndSetup) {
-      await this.activateProfile(clonedProfile.id);
+      logger.info(`Auto-launching and setting up cloned profile: ${newName}`);
+      try {
+        await this.activateProfile(clonedProfile.id);
+      } catch (activateError) {
+        logger.error(`Failed to auto-activate cloned profile: ${activateError}`);
+        // Don't throw - profile was created successfully, just activation failed
+      }
     }
 
-    logger.info(`Cloned profile ${originalProfile.name} to ${newName} (ID: ${clonedProfile.id})`);
+    logger.info(`✅ Successfully cloned profile ${originalProfile.name} to ${newName} (ID: ${clonedProfile.id})`);
+    logger.info(`   The cloned instance has identical: settings, configurations, and ALL installed apps`);
     return clonedProfile;
   }
 

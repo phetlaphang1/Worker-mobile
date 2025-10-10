@@ -10,6 +10,7 @@ import TaskExecutor from './services/TaskExecutor.js';
 import MobileScriptExecutor from './services/MobileScriptExecutor.js';
 import AppiumScriptService from './services/AppiumScriptService.js';
 import DirectMobileScriptService from './services/DirectMobileScriptService.js';
+import UIInspectorService from './services/UIInspectorService.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
@@ -52,6 +53,9 @@ const profileManager = new ProfileManager(ldPlayerController);
 // Script services - Choose one or use both!
 const appiumScriptService = new AppiumScriptService(ldPlayerController, profileManager); // Needs Appium server
 const directScriptService = new DirectMobileScriptService(ldPlayerController, profileManager); // ADB only, no server!
+
+// UI Inspector Service - Auto XPath generation
+const uiInspectorService = new UIInspectorService(ldPlayerController);
 
 // TaskExecutor can use either service
 // For simplicity, we default to DirectScriptService (no Appium server needed)
@@ -200,7 +204,8 @@ setupRoutes(app, {
   taskExecutor,
   scriptExecutor,
   appiumScriptService, // For advanced users who want Appium
-  directScriptService // For most users - simple ADB automation
+  directScriptService, // For most users - simple ADB automation
+  uiInspectorService // Auto XPath generation
 });
 
 // Serve React app for all non-API routes

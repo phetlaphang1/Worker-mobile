@@ -97,7 +97,7 @@ export default function InstanceManager({
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch('http://localhost:5050/api/settings');
+        const response = await fetch('http://localhost:5051/api/settings');
         const data = await response.json();
         if (data.profileSettings?.isTwitterCaring !== undefined) {
           setIsTwitterCaring(data.profileSettings.isTwitterCaring);
@@ -139,7 +139,7 @@ export default function InstanceManager({
     setIsLoadingProfileDetails(true);
     try {
       // Fetch latest profile data from API
-      const response = await fetch(`http://localhost:5050/api/profiles/${profile.id}`);
+      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}`);
       if (response.ok) {
         const fullProfileData = await response.json();
         setSelectedProfile(fullProfileData);
@@ -178,7 +178,7 @@ export default function InstanceManager({
 
   const handleLogClick = async (profile: Profile) => {
     try {
-      const response = await fetch(`http://localhost:5050/api/profiles/${profile.id}/log`);
+      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}/log`);
       if (response.ok) {
         const data = await response.json();
         setLogDetails({ profileId: profile.id, content: data.content });
@@ -201,7 +201,7 @@ export default function InstanceManager({
 
   const handleOutputClick = async (profile: Profile) => {
     try {
-      const response = await fetch(`http://localhost:5050/api/profiles/${profile.id}/output`);
+      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}/output`);
       const data = await response.json();
       setOutputDetails({ profileId: profile.id, ...data });
       setIsOutputModalOpen(true);
@@ -217,7 +217,7 @@ export default function InstanceManager({
 
   const handleFileDownload = async (file: any, profileId: number) => {
     try {
-      const response = await fetch(`http://localhost:5050/api/profiles/${profileId}/output/${file.name}`);
+      const response = await fetch(`http://localhost:5051/api/profiles/${profileId}/output/${file.name}`);
       if (!response.ok) {
         throw new Error('Failed to download file');
       }
@@ -248,7 +248,7 @@ export default function InstanceManager({
 
   const showScriptDetails = async (profileId: number) => {
     try {
-      const response = await fetch(`http://localhost:5050/api/profiles/${profileId}/script`);
+      const response = await fetch(`http://localhost:5051/api/profiles/${profileId}/script`);
       if (response.ok) {
         const data = await response.json();
         setScriptDetails({ profileId, content: data.content || "" });
@@ -257,7 +257,7 @@ export default function InstanceManager({
       } else {
         // Create new script file
         const defaultContent = '// New script file\nconsole.log("Hello from profile script!");';
-        const createResponse = await fetch(`http://localhost:5050/api/profiles/${profileId}/script`, {
+        const createResponse = await fetch(`http://localhost:5051/api/profiles/${profileId}/script`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: defaultContent }),
@@ -283,38 +283,93 @@ export default function InstanceManager({
 
   const handleRunAll = async () => {
     setIsRunningAll(true);
-    let successCount = 0;
-    let failCount = 0;
+    let launchSuccessCount = 0;
+    let launchFailCount = 0;
+    let scriptSuccessCount = 0;
+    let scriptFailCount = 0;
 
     try {
-      // Run sequentially with delay to avoid overwhelming system
-      for (const profile of profiles) {
-        try {
-          await launchProfileMutation.mutateAsync({ profileId: profile.id });
-          successCount++;
-          // Add delay between launches
-          if (successCount < profiles.length) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        } catch (error) {
-          console.error(`Failed to launch profile ${profile.id}:`, error);
-          failCount++;
-        }
+      // PHASE 1: Launch all instances using resource-managed batch processing
+      toast({
+        title: "Starting Instances",
+        description: "Launching instances with optimized resource allocation...",
+      });
+
+      // Separate profiles into already-active and need-to-launch
+      const activeProfiles = profiles.filter(p => p.status === 'active');
+      const inactiveProfiles = profiles.filter(p => p.status !== 'active');
+
+      console.log(`[RUN ALL] Active: ${activeProfiles.length}, Inactive: ${inactiveProfiles.length}`);
+
+      // Use server-side batch launch with resource management
+      if (inactiveProfiles.length > 0) {
+        const response = await fetch('http://localhost:5051/api/profiles/batch-launch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profileIds: inactiveProfiles.map(p => p.id)
+          })
+        });
+
+        const launchResults = await response.json();
+        console.log(`[RUN ALL] Batch launch results:`, launchResults);
+
+        // Count successes and failures
+        launchSuccessCount = launchResults.results?.filter((r: any) => r.success).length || 0;
+        launchFailCount = launchResults.results?.filter((r: any) => !r.success).length || 0;
       }
 
-      if (successCount > 0) {
+      // Count already-active profiles
+      launchSuccessCount += activeProfiles.length;
+
+      // Invalidate queries to refresh UI
+      await queryClient.invalidateQueries({ queryKey: ['profiles'] });
+
+      // Show launch results
+      toast({
+        title: "Instances Launched",
+        description: `${launchSuccessCount} instance${launchSuccessCount !== 1 ? 's' : ''} ready${launchFailCount > 0 ? `, ${launchFailCount} failed` : ''}`,
+      });
+
+      // Wait for instances to stabilize
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // PHASE 2: Execute scripts using resource-managed batch processing
+      // Run scripts on ALL profiles (both already active and newly launched)
+      const readyProfiles = profiles.filter(p => p.status === 'active');
+
+      console.log(`[RUN ALL] Ready profiles for scripts: ${readyProfiles.length}`);
+
+      if (readyProfiles.length > 0) {
+        toast({
+          title: "Starting Scripts",
+          description: `Executing scripts with concurrency control...`,
+        });
+
+        // Use server-side batch script execution
+        const response = await fetch('http://localhost:5051/api/profiles/batch-execute-scripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profileIds: readyProfiles.map(p => p.id)
+          })
+        });
+
+        const scriptResults = await response.json();
+        console.log(`[RUN ALL] Batch script results:`, scriptResults);
+
+        // Count successes and failures
+        scriptSuccessCount = scriptResults.results?.filter((r: any) => r.success).length || 0;
+        scriptFailCount = scriptResults.results?.filter((r: any) => !r.success).length || 0;
+
+        // Show final results
         toast({
           title: "Run All Complete",
-          description: `Started ${successCount} instance${successCount > 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
-        });
-      } else {
-        toast({
-          title: "Run All Failed",
-          description: "No instances were started successfully",
-          variant: "destructive",
+          description: `${launchSuccessCount} launched, ${scriptSuccessCount} scripts executed${scriptFailCount > 0 ? `, ${scriptFailCount} failed` : ''}`,
         });
       }
     } catch (error) {
+      console.error('Run All error:', error);
       toast({
         title: "Error",
         description: "Failed to run all instances",
@@ -322,6 +377,8 @@ export default function InstanceManager({
       });
     } finally {
       setIsRunningAll(false);
+      // Refresh profiles list
+      await queryClient.invalidateQueries({ queryKey: ['profiles'] });
     }
   };
 
@@ -560,7 +617,7 @@ export default function InstanceManager({
         title={`Output Folder - Profile ${outputDetails?.profileId}`}
         path={outputDetails?.path || ""}
         files={outputDetails?.files || []}
-        baseUrl={`http://localhost:5050/api/profiles/${outputDetails?.profileId}`}
+        baseUrl={`http://localhost:5051/api/profiles/${outputDetails?.profileId}`}
       />
 
       <ImagePreviewModal

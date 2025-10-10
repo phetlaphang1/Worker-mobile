@@ -12,6 +12,8 @@ import { getAutoInstallApps } from '../config/apps.config.js';
 
 import DirectMobileScriptService from '../services/DirectMobileScriptService.js';
 
+import UIInspectorService from '../services/UIInspectorService.js';
+
 interface RouteServices {
   ldPlayerController: LDPlayerController;
   profileManager: ProfileManager;
@@ -19,10 +21,11 @@ interface RouteServices {
   scriptExecutor: MobileScriptExecutor;
   appiumScriptService?: AppiumScriptService;
   directScriptService?: DirectMobileScriptService;
+  uiInspectorService?: UIInspectorService;
 }
 
 export function setupRoutes(app: Express, services: RouteServices) {
-  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService } = services;
+  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService } = services;
 
   // Setup authentication routes first
   setupAuthRoutes(app);
@@ -67,8 +70,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
         settings: {
           resolution: '360,640',
           dpi: 160,
-          cpu: 2,
-          memory: 2048,
+          cpu: 1,           // Giảm từ 2 → 1 core (tối ưu cho multi-instance)
+          memory: 1536,     // Giảm từ 2048 → 1536MB (tiết kiệm RAM)
           androidVersion: '9'
         },
         device: {},
@@ -101,8 +104,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
       const defaultSettings = {
         resolution: '360,640',
         dpi: 160,
-        cpu: 2,
-        memory: 2048,
+        cpu: 1,           // Giảm từ 2 → 1 core (tối ưu cho multi-instance)
+        memory: 1536,     // Giảm từ 2048 → 1536MB (tiết kiệm RAM)
         androidVersion: '9'
       };
 
@@ -206,19 +209,31 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
+  // Clone profile endpoint - always clones with ALL apps and configurations
+  // Note: LDPlayer's copy command always includes everything (settings + apps)
   app.post('/api/profiles/:profileId/clone', async (req: Request, res: Response) => {
     try {
       const profileId = parseInt(req.params.profileId);
-      const { newName, copyApps, launchAndSetup } = req.body;
+      const { newName, launchAndSetup } = req.body;
+
       if (!newName) {
         return res.status(400).json({ error: 'newName is required' });
       }
+
+      logger.info(`Cloning profile ${profileId} to "${newName}"...`);
+      logger.info(`This will clone ALL configurations and installed applications`);
+
       const clonedProfile = await profileManager.cloneProfile(
         profileId,
         newName,
-        { copyApps, launchAndSetup }
+        { launchAndSetup }
       );
-      res.json({ success: true, profile: clonedProfile });
+
+      res.json({
+        success: true,
+        profile: clonedProfile,
+        message: 'Profile cloned successfully with all apps and configurations'
+      });
     } catch (error) {
       logger.error('Error cloning profile:', error);
       res.status(500).json({ error: 'Failed to clone profile' });
@@ -898,19 +913,28 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Execute JavaScript code using ADB directly (like Puppeteer!)
   app.post('/api/direct/execute', async (req: Request, res: Response) => {
     try {
+      console.log('[DEBUG API] /api/direct/execute called');
+
       if (!directScriptService) {
+        console.error('[DEBUG API] DirectScriptService not initialized!');
         return res.status(500).json({ error: 'Direct Script Service not initialized' });
       }
 
       const { profileId, scriptCode } = req.body;
+      console.log(`[DEBUG API] Request: profileId=${profileId}, scriptLength=${scriptCode?.length || 0}`);
 
       if (!profileId || !scriptCode) {
+        console.error('[DEBUG API] Missing profileId or scriptCode');
         return res.status(400).json({ error: 'profileId and scriptCode are required' });
       }
 
+      console.log(`[DEBUG API] Queuing script for profile ${profileId}...`);
       const task = await directScriptService.queueScript(scriptCode, profileId);
+      console.log(`[DEBUG API] Script queued successfully: taskId=${task.id}, status=${task.status}`);
+
       res.json({ success: true, task });
     } catch (error) {
+      console.error('[DEBUG API] Error executing direct script:', error);
       logger.error('Error executing direct script:', error);
       res.status(500).json({ error: 'Failed to execute direct script' });
     }
@@ -1538,6 +1562,394 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error opening browser:', error);
       res.status(500).json({ error: 'Failed to open browser' });
+    }
+  });
+
+  // ============================================
+  // UI Inspector Routes - Auto XPath Generation
+  // ============================================
+
+  // Get UI hierarchy for profile/instance
+  app.get('/api/inspector/:profileId/ui', async (req: Request, res: Response) => {
+    try {
+      if (!uiInspectorService) {
+        return res.status(500).json({ error: 'UI Inspector Service not initialized' });
+      }
+
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (profile.status !== 'active') {
+        return res.status(400).json({ error: 'Profile must be active to inspect UI' });
+      }
+
+      const { xml, elements } = await uiInspectorService.inspectInstance(profile.port);
+      logger.info(`UI Inspector: Found ${elements.length} elements for profile ${profile.name}`);
+
+      res.json({
+        success: true,
+        xml,
+        elements,
+        count: elements.length
+      });
+    } catch (error) {
+      logger.error('Error getting UI hierarchy:', error);
+      res.status(500).json({ error: 'Failed to get UI hierarchy' });
+    }
+  });
+
+  // Get XPath suggestions at coordinates
+  app.post('/api/inspector/:profileId/xpath', async (req: Request, res: Response) => {
+    try {
+      if (!uiInspectorService) {
+        return res.status(500).json({ error: 'UI Inspector Service not initialized' });
+      }
+
+      const profileId = parseInt(req.params.profileId);
+      const { x, y } = req.body;
+
+      if (x === undefined || y === undefined) {
+        return res.status(400).json({ error: 'x and y coordinates are required' });
+      }
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (profile.status !== 'active') {
+        return res.status(400).json({ error: 'Profile must be active to inspect UI' });
+      }
+
+      const { element, suggestions } = await uiInspectorService.getXPathAtPosition(
+        profile.port,
+        x,
+        y
+      );
+
+      if (!element) {
+        return res.json({
+          success: true,
+          element: null,
+          suggestions: [],
+          message: 'No element found at the specified coordinates'
+        });
+      }
+
+      logger.info(`UI Inspector: Generated ${suggestions.length} XPath suggestions for profile ${profile.name} at (${x}, ${y})`);
+
+      res.json({
+        success: true,
+        element,
+        suggestions
+      });
+    } catch (error) {
+      logger.error('Error getting XPath at position:', error);
+      res.status(500).json({ error: 'Failed to get XPath at position' });
+    }
+  });
+
+  // Smart search for elements (auto-find by text, resource-id, class)
+  app.post('/api/inspector/:profileId/search', async (req: Request, res: Response) => {
+    try {
+      if (!uiInspectorService) {
+        return res.status(500).json({ error: 'UI Inspector Service not initialized' });
+      }
+
+      const profileId = parseInt(req.params.profileId);
+      const { query, searchText, searchResourceId, searchClass, onlyClickable } = req.body;
+
+      if (!query || query.trim() === '') {
+        return res.status(400).json({ error: 'Search query is required' });
+      }
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (profile.status !== 'active') {
+        return res.status(400).json({ error: 'Profile must be active to search elements' });
+      }
+
+      // Smart search with options
+      const result = await uiInspectorService.smartSearch(
+        profile.port,
+        query,
+        {
+          searchText: searchText !== false,
+          searchResourceId: searchResourceId !== false,
+          searchClass: searchClass !== false,
+          onlyClickable: onlyClickable === true
+        }
+      );
+
+      logger.info(`Smart search for "${query}" found ${result.count} elements in profile ${profile.name}`);
+
+      res.json({
+        success: true,
+        query,
+        elements: result.elements,
+        count: result.count
+      });
+    } catch (error) {
+      logger.error('Error searching elements:', error);
+      res.status(500).json({ error: 'Failed to search elements' });
+    }
+  });
+
+  // Get all interactive elements (buttons, inputs, etc.)
+  app.get('/api/inspector/:profileId/interactive', async (req: Request, res: Response) => {
+    try {
+      if (!uiInspectorService) {
+        return res.status(500).json({ error: 'UI Inspector Service not initialized' });
+      }
+
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (profile.status !== 'active') {
+        return res.status(400).json({ error: 'Profile must be active to get interactive elements' });
+      }
+
+      const result = await uiInspectorService.getInteractiveElements(profile.port);
+
+      logger.info(`Found ${result.count} interactive elements in profile ${profile.name}`);
+
+      res.json({
+        success: true,
+        elements: result.elements,
+        count: result.count
+      });
+    } catch (error) {
+      logger.error('Error getting interactive elements:', error);
+      res.status(500).json({ error: 'Failed to get interactive elements' });
+    }
+  });
+
+  // Get screenshot for UI inspection
+  app.get('/api/inspector/:profileId/screenshot', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const profile = profileManager.getProfile(profileId);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (profile.status !== 'active') {
+        return res.status(400).json({ error: 'Profile must be active to get screenshot' });
+      }
+
+      // Take screenshot via ADB
+      const deviceSerial = await ldPlayerController.resolveAdbSerial(profile.port);
+      const timestamp = Date.now();
+      const tempPath = `/sdcard/inspector_screenshot_${timestamp}.png`;
+      const localPath = path.join(process.cwd(), 'temp', `screenshot_${profileId}_${timestamp}.png`);
+
+      // Ensure temp directory exists
+      const fs = await import('fs/promises');
+      await fs.mkdir(path.join(process.cwd(), 'temp'), { recursive: true });
+
+      // Take screenshot
+      await ldPlayerController.executeAdbCommand(deviceSerial, `shell screencap -p ${tempPath}`);
+      await ldPlayerController.executeAdbCommand(deviceSerial, `pull ${tempPath} "${localPath}"`);
+      await ldPlayerController.executeAdbCommand(deviceSerial, `shell rm ${tempPath}`);
+
+      // Read screenshot and convert to base64
+      const imageBuffer = await fs.readFile(localPath);
+      const base64Image = imageBuffer.toString('base64');
+
+      // Clean up temp file
+      await fs.unlink(localPath).catch(() => {});
+
+      logger.info(`Screenshot captured for profile ${profile.name}`);
+
+      res.json({
+        success: true,
+        image: `data:image/png;base64,${base64Image}`,
+        timestamp
+      });
+    } catch (error) {
+      logger.error('Error getting screenshot:', error);
+      res.status(500).json({ error: 'Failed to get screenshot' });
+    }
+  });
+
+  // ============================================
+  // Batch Operations with Resource Management
+  // ============================================
+
+  /**
+   * Batch launch multiple profiles with resource pooling
+   * Uses ResourceManager to limit concurrent launches
+   */
+  app.post('/api/profiles/batch-launch', async (req: Request, res: Response) => {
+    try {
+      const { profileIds } = req.body;
+
+      if (!Array.isArray(profileIds) || profileIds.length === 0) {
+        return res.status(400).json({ error: 'profileIds must be a non-empty array' });
+      }
+
+      logger.info(`[BATCH LAUNCH] Starting batch launch for ${profileIds.length} profiles`);
+
+      // Import ResourceManager
+      const { resourceManager } = await import('../services/ResourceManager.js');
+
+      // Prepare launch items
+      const launchItems = profileIds.map(id => ({
+        id: `profile_${id}`,
+        launchFn: async () => {
+          const profile = profileManager.getProfile(id);
+          if (!profile) {
+            throw new Error(`Profile ${id} not found`);
+          }
+
+          // Skip if already active
+          if (profile.status === 'active') {
+            logger.info(`[BATCH LAUNCH] Profile ${id} already active, skipping`);
+            return { profileId: id, alreadyActive: true };
+          }
+
+          // Launch instance only (no scripts)
+          await profileManager.launchInstanceOnly(id);
+          logger.info(`[BATCH LAUNCH] Profile ${id} launched successfully`);
+          return { profileId: id, alreadyActive: false };
+        }
+      }));
+
+      // Execute batch launch with resource management
+      const results = await resourceManager.batchLaunch(launchItems);
+
+      // Format results
+      const formattedResults = results.map(r => ({
+        profileId: parseInt(r.id.replace('profile_', '')),
+        success: r.success,
+        error: r.error?.message,
+        alreadyActive: r.result?.alreadyActive || false
+      }));
+
+      const successCount = formattedResults.filter(r => r.success).length;
+      const failCount = formattedResults.filter(r => !r.success).length;
+
+      logger.info(`[BATCH LAUNCH] Completed: ${successCount} success, ${failCount} failed`);
+
+      res.json({
+        success: true,
+        total: profileIds.length,
+        successCount,
+        failCount,
+        results: formattedResults
+      });
+    } catch (error) {
+      logger.error('[BATCH LAUNCH] Error:', error);
+      res.status(500).json({ error: 'Failed to batch launch profiles' });
+    }
+  });
+
+  /**
+   * Batch execute scripts on multiple profiles with concurrency control
+   * Uses ResourceManager to limit concurrent script executions
+   */
+  app.post('/api/profiles/batch-execute-scripts', async (req: Request, res: Response) => {
+    try {
+      const { profileIds } = req.body;
+
+      if (!Array.isArray(profileIds) || profileIds.length === 0) {
+        return res.status(400).json({ error: 'profileIds must be a non-empty array' });
+      }
+
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      logger.info(`[BATCH SCRIPT] Starting batch script execution for ${profileIds.length} profiles`);
+
+      // Import ResourceManager
+      const { resourceManager } = await import('../services/ResourceManager.js');
+
+      // Prepare script execution items
+      const scriptItems = profileIds.map(id => ({
+        id: `script_${id}`,
+        scriptFn: async () => {
+          const profile = profileManager.getProfile(id);
+          if (!profile) {
+            throw new Error(`Profile ${id} not found`);
+          }
+
+          const scriptContent = profile.metadata?.scriptContent;
+          if (!scriptContent || scriptContent.trim() === '') {
+            logger.info(`[BATCH SCRIPT] Profile ${id} has no script, skipping`);
+            return { profileId: id, hasScript: false };
+          }
+
+          // Queue script for execution
+          const task = await directScriptService.queueScript(scriptContent, id);
+          logger.info(`[BATCH SCRIPT] Script queued for profile ${id}: taskId=${task.id}`);
+          return { profileId: id, hasScript: true, taskId: task.id };
+        }
+      }));
+
+      // Execute batch scripts with resource management
+      const results = await resourceManager.batchExecuteScripts(scriptItems);
+
+      // Format results
+      const formattedResults = results.map(r => ({
+        profileId: parseInt(r.id.replace('script_', '')),
+        success: r.success,
+        error: r.error?.message,
+        hasScript: r.result?.hasScript || false,
+        taskId: r.result?.taskId
+      }));
+
+      const successCount = formattedResults.filter(r => r.success && r.hasScript).length;
+      const failCount = formattedResults.filter(r => !r.success).length;
+      const noScriptCount = formattedResults.filter(r => r.success && !r.hasScript).length;
+
+      logger.info(`[BATCH SCRIPT] Completed: ${successCount} scripts executed, ${noScriptCount} no script, ${failCount} failed`);
+
+      res.json({
+        success: true,
+        total: profileIds.length,
+        successCount,
+        failCount,
+        noScriptCount,
+        results: formattedResults
+      });
+    } catch (error) {
+      logger.error('[BATCH SCRIPT] Error:', error);
+      res.status(500).json({ error: 'Failed to batch execute scripts' });
+    }
+  });
+
+  /**
+   * Get resource manager status
+   */
+  app.get('/api/resources/status', async (req: Request, res: Response) => {
+    try {
+      const { resourceManager } = await import('../services/ResourceManager.js');
+      const status = resourceManager.getStatus();
+
+      res.json({
+        success: true,
+        ...status,
+        limits: {
+          maxConcurrentLaunches: parseInt(process.env.MAX_CONCURRENT_LAUNCHES || '3'),
+          maxConcurrentScripts: parseInt(process.env.MAX_CONCURRENT_SCRIPTS || '7')
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting resource status:', error);
+      res.status(500).json({ error: 'Failed to get resource status' });
     }
   });
 }

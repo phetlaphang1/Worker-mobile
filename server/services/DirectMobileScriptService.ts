@@ -1,6 +1,8 @@
 import LDPlayerController from '../core/LDPlayerController.js';
 import ProfileManager, { MobileProfile } from './ProfileManager.js';
 import { logger } from '../utils/logger.js';
+import * as xpath from 'xpath';
+import { DOMParser } from 'xmldom';
 
 export interface DirectScriptTask {
   id: string;
@@ -445,9 +447,60 @@ export class DirectMobileScriptService {
           return await this.controller.executeAdbCommand(deviceSerial, command);
         },
 
+        // Execute ADB shell command (alias for adb with shell prefix)
+        adbShell: async (command: string) => {
+          log(`Executing ADB shell: ${command}`);
+          return await this.controller.executeAdbCommand(deviceSerial, `shell ${command}`);
+        },
+
+        // Tap at relative position (percentage of screen)
+        tapRel: async (xPercent: number, yPercent: number) => {
+          const size = await helpers.getScreenSize();
+          const x = Math.floor((size.width * xPercent) / 100);
+          const y = Math.floor((size.height * yPercent) / 100);
+          log(`Tapping at ${xPercent}%, ${yPercent}% = (${x}, ${y})`);
+          await helpers.tap(x, y);
+        },
+
+        // Swipe with relative coordinates
+        swipeRel: async (x1Percent: number, y1Percent: number, x2Percent: number, y2Percent: number, duration = 500) => {
+          const size = await helpers.getScreenSize();
+          const x1 = Math.floor((size.width * x1Percent) / 100);
+          const y1 = Math.floor((size.height * y1Percent) / 100);
+          const x2 = Math.floor((size.width * x2Percent) / 100);
+          const y2 = Math.floor((size.height * y2Percent) / 100);
+          log(`Swiping from ${x1Percent}%, ${y1Percent}% to ${x2Percent}%, ${y2Percent}%`);
+          await helpers.swipe(x1, y1, x2, y2, duration);
+        },
+
+        // Random delay (human-like)
+        randomDelay: async (min: number, max: number) => {
+          const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+          log(`Random delay: ${delay}ms`);
+          await helpers.sleep(delay);
+        },
+
         // Console.log trong script
         log: (message: string) => {
           log(`[User Script] ${message}`);
+        },
+
+        // Get account credentials from profile metadata
+        getAccount: (appName: string) => {
+          log(`Getting account for: ${appName}`);
+          const accounts = profile.metadata?.accounts || {};
+          if (accounts[appName]) {
+            log(`Found account for ${appName}`);
+            return accounts[appName];
+          }
+          log(`No account found for ${appName}`);
+          return null;
+        },
+
+        // Get all accounts
+        getAllAccounts: () => {
+          log(`Getting all accounts`);
+          return profile.metadata?.accounts || {};
         },
 
         // Check ADB connection
@@ -484,6 +537,210 @@ export class DirectMobileScriptService {
             log(`Reconnection failed: ${error.message}`);
             return false;
           }
+        },
+
+        // ========================================
+        // XPath Support (Advanced Element Finding)
+        // ========================================
+
+        /**
+         * Find element by XPath query
+         * @param xpathQuery - XPath expression (e.g., '//android.widget.Button[@text="Login"]')
+         * @returns Element with coordinates and bounds
+         */
+        findByXPath: async (xpathQuery: string) => {
+          log(`Finding element by XPath: ${xpathQuery}`);
+
+          // Dump UI hierarchy to XML
+          await this.controller.executeAdbCommand(
+            deviceSerial,
+            'shell uiautomator dump /sdcard/window_dump.xml'
+          );
+
+          // Get XML content
+          const xmlString = await this.controller.executeAdbCommand(
+            deviceSerial,
+            'shell cat /sdcard/window_dump.xml'
+          );
+
+          try {
+            // Parse XML using xmldom
+            const doc = new DOMParser().parseFromString(xmlString, 'text/xml');
+
+            // Execute XPath query
+            const nodes = xpath.select(xpathQuery, doc) as any[];
+
+            if (!nodes || nodes.length === 0) {
+              throw new Error(`No element found for XPath: ${xpathQuery}`);
+            }
+
+            // Get first matching node
+            const node = nodes[0];
+
+            // Extract bounds attribute
+            const boundsAttr = node.getAttribute ? node.getAttribute('bounds') : null;
+
+            if (!boundsAttr) {
+              throw new Error(`Element found but has no bounds attribute`);
+            }
+
+            // Parse bounds: "[x1,y1][x2,y2]"
+            const boundsMatch = boundsAttr.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+            if (!boundsMatch) {
+              throw new Error(`Invalid bounds format: ${boundsAttr}`);
+            }
+
+            const [, x1, y1, x2, y2] = boundsMatch.map(Number);
+            const centerX = Math.floor((x1 + x2) / 2);
+            const centerY = Math.floor((y1 + y2) / 2);
+
+            log(`Found element at (${centerX}, ${centerY}), bounds: ${boundsAttr}`);
+
+            return {
+              x: centerX,
+              y: centerY,
+              bounds: { x1, y1, x2, y2 },
+              node: node,
+              text: node.getAttribute ? node.getAttribute('text') : '',
+              resourceId: node.getAttribute ? node.getAttribute('resource-id') : '',
+              className: node.getAttribute ? node.getAttribute('class') : ''
+            };
+          } catch (error: any) {
+            log(`XPath query failed: ${error.message}`);
+            throw new Error(`XPath error: ${error.message}`);
+          }
+        },
+
+        /**
+         * Find multiple elements by XPath query
+         * @param xpathQuery - XPath expression
+         * @returns Array of elements with coordinates
+         */
+        findAllByXPath: async (xpathQuery: string) => {
+          log(`Finding all elements by XPath: ${xpathQuery}`);
+
+          // Dump UI hierarchy
+          await this.controller.executeAdbCommand(
+            deviceSerial,
+            'shell uiautomator dump /sdcard/window_dump.xml'
+          );
+
+          const xmlString = await this.controller.executeAdbCommand(
+            deviceSerial,
+            'shell cat /sdcard/window_dump.xml'
+          );
+
+          try {
+            const doc = new DOMParser().parseFromString(xmlString, 'text/xml');
+            const nodes = xpath.select(xpathQuery, doc) as any[];
+
+            if (!nodes || nodes.length === 0) {
+              log(`No elements found for XPath: ${xpathQuery}`);
+              return [];
+            }
+
+            const elements = nodes.map((node, index) => {
+              const boundsAttr = node.getAttribute ? node.getAttribute('bounds') : null;
+              if (!boundsAttr) return null;
+
+              const boundsMatch = boundsAttr.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+              if (!boundsMatch) return null;
+
+              const [, x1, y1, x2, y2] = boundsMatch.map(Number);
+              const centerX = Math.floor((x1 + x2) / 2);
+              const centerY = Math.floor((y1 + y2) / 2);
+
+              return {
+                x: centerX,
+                y: centerY,
+                bounds: { x1, y1, x2, y2 },
+                text: node.getAttribute ? node.getAttribute('text') : '',
+                resourceId: node.getAttribute ? node.getAttribute('resource-id') : '',
+                className: node.getAttribute ? node.getAttribute('class') : '',
+                index: index
+              };
+            }).filter(Boolean);
+
+            log(`Found ${elements.length} elements`);
+            return elements;
+          } catch (error: any) {
+            log(`XPath query failed: ${error.message}`);
+            return [];
+          }
+        },
+
+        /**
+         * Tap element found by XPath
+         * @param xpathQuery - XPath expression
+         */
+        tapByXPath: async (xpathQuery: string) => {
+          log(`Tapping element by XPath: ${xpathQuery}`);
+          const element = await helpers.findByXPath(xpathQuery);
+          await helpers.tap(element.x, element.y);
+          log(`Tapped element at (${element.x}, ${element.y})`);
+        },
+
+        /**
+         * Type text into element found by XPath
+         * @param xpathQuery - XPath expression
+         * @param text - Text to type
+         */
+        typeByXPath: async (xpathQuery: string, text: string) => {
+          log(`Typing into element by XPath: ${xpathQuery}`);
+          const element = await helpers.findByXPath(xpathQuery);
+          await helpers.tap(element.x, element.y);
+          await helpers.sleep(300);
+          await helpers.type(text);
+          log(`Typed "${text}" into element`);
+        },
+
+        /**
+         * Wait for element to appear by XPath
+         * @param xpathQuery - XPath expression
+         * @param timeout - Timeout in milliseconds (default: 10000)
+         */
+        waitForXPath: async (xpathQuery: string, timeout = 10000) => {
+          log(`Waiting for XPath element: ${xpathQuery} (timeout: ${timeout}ms)`);
+          const startTime = Date.now();
+
+          while (Date.now() - startTime < timeout) {
+            try {
+              const element = await helpers.findByXPath(xpathQuery);
+              log(`XPath element found after ${Date.now() - startTime}ms`);
+              return element;
+            } catch (error) {
+              // Element not found yet, continue waiting
+              await helpers.sleep(500);
+            }
+          }
+
+          throw new Error(`XPath element not found after ${timeout}ms: ${xpathQuery}`);
+        },
+
+        /**
+         * Check if element exists by XPath
+         * @param xpathQuery - XPath expression
+         * @returns true if element exists, false otherwise
+         */
+        existsByXPath: async (xpathQuery: string) => {
+          try {
+            await helpers.findByXPath(xpathQuery);
+            return true;
+          } catch (error) {
+            return false;
+          }
+        },
+
+        /**
+         * Get text content of element found by XPath
+         * @param xpathQuery - XPath expression
+         * @returns Text content
+         */
+        getTextByXPath: async (xpathQuery: string) => {
+          log(`Getting text by XPath: ${xpathQuery}`);
+          const element = await helpers.findByXPath(xpathQuery);
+          log(`Text: "${element.text}"`);
+          return element.text;
         }
       };
 
@@ -614,7 +871,8 @@ export class DirectMobileScriptService {
   }
 
   /**
-   * Process script queue
+   * Process script queue - PARALLEL EXECUTION
+   * Execute ALL pending tasks simultaneously (not sequentially)
    */
   private async processQueue() {
     const pendingTasks = this.scriptQueue.filter(t => t.status === 'pending');
@@ -622,18 +880,19 @@ export class DirectMobileScriptService {
     console.log(`[DEBUG] Processing queue: ${pendingTasks.length} pending tasks`);
     logger.info(`Processing queue: ${pendingTasks.length} pending, ${this.runningScripts.size} running`);
 
-    for (const task of pendingTasks) {
+    // ⚡ IMPORTANT: Start ALL pending tasks in PARALLEL (not for loop)
+    const executionPromises = pendingTasks.map(task => {
       if (this.runningScripts.has(task.id)) {
         console.log(`[DEBUG] Task ${task.id} already running, skipping`);
-        continue;
+        return Promise.resolve();
       }
 
       task.status = 'running';
       task.startedAt = new Date();
       task.logs?.push(`Script execution started at ${task.startedAt.toISOString()}`);
 
-      console.log(`[DEBUG] Starting execution for task ${task.id}`);
-      logger.info(`Starting execution for task ${task.id}`);
+      console.log(`[DEBUG] Starting PARALLEL execution for task ${task.id}, profile ${task.profileId}`);
+      logger.info(`Starting PARALLEL execution for task ${task.id}, profile ${task.profileId}`);
 
       const execution = this.executeScript(task)
         .then(async result => {
@@ -642,8 +901,8 @@ export class DirectMobileScriptService {
           task.completedAt = new Date();
           task.logs?.push(`Script completed at ${task.completedAt.toISOString()}`);
 
-          console.log(`[DEBUG] Task ${task.id} completed successfully`);
-          logger.info(`Script ${task.id} completed successfully`);
+          console.log(`[DEBUG] Task ${task.id} (profile ${task.profileId}) completed successfully`);
+          logger.info(`Script ${task.id} (profile ${task.profileId}) completed successfully`);
 
           // Save logs to profile for View Log UI
           await this.saveLogsToProfile(task);
@@ -654,19 +913,25 @@ export class DirectMobileScriptService {
           task.completedAt = new Date();
           task.logs?.push(`Script failed at ${task.completedAt.toISOString()}: ${error.message}`);
 
-          console.error(`[DEBUG] Task ${task.id} failed:`, error);
-          logger.error(`Script ${task.id} failed: ${error.message}`, error);
+          console.error(`[DEBUG] Task ${task.id} (profile ${task.profileId}) failed:`, error);
+          logger.error(`Script ${task.id} (profile ${task.profileId}) failed: ${error.message}`, error);
 
           // Save logs to profile even on failure
           await this.saveLogsToProfile(task);
         })
         .finally(() => {
           this.runningScripts.delete(task.id);
-          console.log(`[DEBUG] Task ${task.id} removed from running scripts`);
+          console.log(`[DEBUG] Task ${task.id} (profile ${task.profileId}) removed from running scripts`);
         });
 
       this.runningScripts.set(task.id, execution);
-    }
+      return execution;
+    });
+
+    // Wait for all executions to complete (parallel)
+    console.log(`[DEBUG] Waiting for ${executionPromises.length} parallel executions...`);
+    await Promise.allSettled(executionPromises);
+    console.log(`[DEBUG] All parallel executions completed`);
   }
 
   getTask(taskId: string): DirectScriptTask | undefined {
