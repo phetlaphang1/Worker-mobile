@@ -153,7 +153,7 @@ export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({
         {imageFile && (
           <div className="text-center">
             <img 
-              src={`http://localhost:5050/api/profiles/${imageFile.profileId}/output/${imageFile.name}`}
+              src={`http://localhost:5051/api/profiles/${imageFile.profileId}/output/${imageFile.name}`}
               alt={imageFile.name}
               className="max-w-full max-h-[60vh] object-contain mx-auto border rounded-lg shadow-lg"
               onError={(e) => {
@@ -209,19 +209,17 @@ export const CloneInstanceModal: React.FC<CloneInstanceModalProps> = ({
   originalName = ""
 }) => {
   const [newName, setNewName] = useState('');
-  const [copyApps, setCopyApps] = useState(true);
 
   const handleSubmit = () => {
     if (newName.trim()) {
-      onSubmit(newName.trim(), copyApps);
+      // Always clone with apps (LDPlayer copy command always includes apps)
+      onSubmit(newName.trim(), true);
       setNewName('');
-      setCopyApps(true);
     }
   };
 
   const handleClose = () => {
     setNewName('');
-    setCopyApps(true);
     onClose();
   };
 
@@ -246,29 +244,47 @@ export const CloneInstanceModal: React.FC<CloneInstanceModalProps> = ({
             />
           </div>
 
-          <div className="flex items-center space-x-2 p-3 bg-emerald-50 border border-emerald-200 rounded">
-            <Checkbox
-              id="copy-apps"
-              checked={copyApps}
-              onCheckedChange={(checked) => setCopyApps(checked as boolean)}
-            />
-            <div className="flex-1">
-              <Label htmlFor="copy-apps" className="cursor-pointer text-gray-900 font-medium">
-                Copy all installed apps
-              </Label>
-              <p className="text-xs text-gray-600 mt-1">
-                Clone the instance with all installed applications (recommended)
-              </p>
+          <div className="bg-blue-50 border border-blue-200 rounded p-4">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <svg className="h-5 w-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h4 className="text-sm font-medium text-blue-900 mb-1">What will be cloned?</h4>
+                <ul className="text-xs text-blue-800 space-y-1">
+                  <li>✓ All hardware settings (CPU, RAM, resolution)</li>
+                  <li>✓ All device configurations</li>
+                  <li>✓ All network settings (proxy, etc.)</li>
+                  <li>✓ All installed applications and their data</li>
+                  <li>✓ All system configurations</li>
+                </ul>
+              </div>
             </div>
           </div>
 
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded border border-gray-200">
-            <p className="font-medium text-gray-700 mb-1">Note:</p>
+            <p className="font-medium text-gray-700 mb-1">Important:</p>
             <ul className="list-disc list-inside space-y-1">
-              <li>Settings and configurations will be copied</li>
-              <li>If "Copy apps" is checked, all apps will be cloned</li>
-              <li>The cloned instance will be created as inactive</li>
+              <li>The cloned instance will be an exact copy of the original</li>
+              <li>Only the instance name will be different</li>
+              <li>If source instance is running, it will be temporarily stopped</li>
+              <li>Clone process takes ~30 seconds to 2 minutes</li>
             </ul>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded p-3">
+            <div className="flex items-start space-x-2">
+              <svg className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-xs text-blue-800">
+                  <strong>What gets cloned via GUI:</strong> All settings, configurations, apps, app data, and login sessions
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -312,7 +328,7 @@ export const NewInstanceModal: React.FC<NewInstanceModalProps> = ({
   // Fetch available apps
   useEffect(() => {
     if (isOpen) {
-      fetch('http://localhost:5050/api/apps/available')
+      fetch('http://localhost:5051/api/apps/available')
         .then(res => res.json())
         .then(data => setAvailableApps(data))
         .catch(err => console.error('Failed to fetch apps:', err));

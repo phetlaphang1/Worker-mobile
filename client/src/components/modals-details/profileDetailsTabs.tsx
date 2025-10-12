@@ -12,17 +12,18 @@ import {
 import { Switch } from "@/components/ui/switch";
 import {
   Settings,
-  Monitor,
   Shield,
-  FileText,
   Calendar,
   Copy,
   Package,
+  Key,
+  Search,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import UIInspector from "./uiInspector";
 
 interface CustomFieldEditorProps {
   value: string;
@@ -51,7 +52,7 @@ export default function ProfileDetailsTabs({
 
   // Fetch available apps
   useEffect(() => {
-    fetch('http://localhost:5050/api/apps/available')
+    fetch('http://localhost:5051/api/apps/available')
       .then(res => res.json())
       .then(data => setAvailableApps(data))
       .catch(err => console.error('Failed to fetch apps:', err));
@@ -60,7 +61,7 @@ export default function ProfileDetailsTabs({
   const installAppMutation = useMutation({
     mutationFn: async (apkFileName: string) => {
       setInstallingApp(apkFileName);
-      const response = await fetch(`http://localhost:5050/api/profiles/${profileData.id}/install-app`, {
+      const response = await fetch(`http://localhost:5051/api/profiles/${profileData.id}/install-app`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apkFileName })
@@ -87,7 +88,7 @@ export default function ProfileDetailsTabs({
 
   const testProxyMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('http://localhost:5050/api/proxy-test', {
+      const response = await fetch('http://localhost:5051/api/proxy-test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,7 +149,7 @@ export default function ProfileDetailsTabs({
   return (
     <Tabs defaultValue="general" className="w-full">
       <TabsList
-        className="grid w-full grid-cols-4 shrink-0"
+        className="grid w-full grid-cols-5 shrink-0"
         style={{ minWidth: "100%" }}
       >
         <TabsTrigger
@@ -157,13 +158,6 @@ export default function ProfileDetailsTabs({
         >
           <Settings className="h-4 w-4" />
           General
-        </TabsTrigger>
-        <TabsTrigger
-          value="browser"
-          className="flex items-center gap-1 flex-1 min-w-0"
-        >
-          <Monitor className="h-4 w-4" />
-          Browser
         </TabsTrigger>
         <TabsTrigger
           value="proxy"
@@ -178,6 +172,20 @@ export default function ProfileDetailsTabs({
         >
           <Package className="h-4 w-4" />
           Apps
+        </TabsTrigger>
+        <TabsTrigger
+          value="account"
+          className="flex items-center gap-1 flex-1 min-w-0"
+        >
+          <Key className="h-4 w-4" />
+          Account
+        </TabsTrigger>
+        <TabsTrigger
+          value="inspector"
+          className="flex items-center gap-1 flex-1 min-w-0"
+        >
+          <Search className="h-4 w-4" />
+          Inspector
         </TabsTrigger>
         {/* Temporarily disabled - no backend support yet */}
         {/* <TabsTrigger
@@ -361,158 +369,6 @@ export default function ProfileDetailsTabs({
                   : ""
                 }
               </p>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Browser Tab */}
-        <TabsContent value="browser" className="space-y-3 w-full min-w-0">
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="user-agent">User Agent</Label>
-              <Input
-                id="user-agent"
-                value={formData.userAgent}
-                onChange={(e) =>
-                  handleInputChange("userAgent", e.target.value)
-                }
-                className="font-mono text-sm"
-                placeholder="Enter user agent string"
-              />
-            </div>
-            <div>
-              <Label htmlFor="custom-user-agent">
-                Custom User Agent (Optional)
-              </Label>
-              <Input
-                id="custom-user-agent"
-                value={formData.customUserAgent}
-                onChange={(e) =>
-                  handleInputChange("customUserAgent", e.target.value)
-                }
-                className="font-mono text-sm"
-                placeholder="Leave empty to use default user agent"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="viewport-width">
-                Viewport Width (px)
-              </Label>
-              <Input
-                id="viewport-width"
-                type="number"
-                value={formData.viewportWidth}
-                onChange={(e) =>
-                  handleInputChange(
-                    "viewportWidth",
-                    parseInt(e.target.value) || 1280,
-                  )
-                }
-                min="800"
-                max="4000"
-              />
-            </div>
-            <div>
-              <Label htmlFor="viewport-height">
-                Viewport Height (px)
-              </Label>
-              <Input
-                id="viewport-height"
-                type="number"
-                value={formData.viewportHeight}
-                onChange={(e) =>
-                  handleInputChange(
-                    "viewportHeight",
-                    parseInt(e.target.value) || 720,
-                  )
-                }
-                min="600"
-                max="3000"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="timezone">Timezone</Label>
-              <Select
-                value={formData.timezone}
-                onValueChange={(value) =>
-                  handleInputChange("timezone", value)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select timezone" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="America/New_York">
-                    America/New_York
-                  </SelectItem>
-                  <SelectItem value="America/Los_Angeles">
-                    America/Los_Angeles
-                  </SelectItem>
-                  <SelectItem value="America/Chicago">
-                    America/Chicago
-                  </SelectItem>
-                  <SelectItem value="Europe/London">
-                    Europe/London
-                  </SelectItem>
-                  <SelectItem value="Europe/Paris">
-                    Europe/Paris
-                  </SelectItem>
-                  <SelectItem value="Europe/Berlin">
-                    Europe/Berlin
-                  </SelectItem>
-                  <SelectItem value="Asia/Tokyo">
-                    Asia/Tokyo
-                  </SelectItem>
-                  <SelectItem value="Asia/Shanghai">
-                    Asia/Shanghai
-                  </SelectItem>
-                  <SelectItem value="Asia/Kolkata">
-                    Asia/Kolkata
-                  </SelectItem>
-                  <SelectItem value="Australia/Sydney">
-                    Australia/Sydney
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="language">Language</Label>
-              <Select
-                value={formData.language}
-                onValueChange={(value) =>
-                  handleInputChange("language", value)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en-US">English (US)</SelectItem>
-                  <SelectItem value="en-GB">English (UK)</SelectItem>
-                  <SelectItem value="es-ES">Spanish</SelectItem>
-                  <SelectItem value="fr-FR">French</SelectItem>
-                  <SelectItem value="de-DE">German</SelectItem>
-                  <SelectItem value="it-IT">Italian</SelectItem>
-                  <SelectItem value="pt-BR">
-                    Portuguese (Brazil)
-                  </SelectItem>
-                  <SelectItem value="ru-RU">Russian</SelectItem>
-                  <SelectItem value="ja-JP">Japanese</SelectItem>
-                  <SelectItem value="ko-KR">Korean</SelectItem>
-                  <SelectItem value="zh-CN">
-                    Chinese (Simplified)
-                  </SelectItem>
-                  <SelectItem value="zh-TW">
-                    Chinese (Traditional)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
         </TabsContent>
@@ -709,6 +565,49 @@ export default function ProfileDetailsTabs({
               </div>
             )}
           </div>
+        </TabsContent>
+
+        {/* Account Tab */}
+        <TabsContent value="account" className="space-y-4 w-full min-w-0">
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Account Information</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Store account credentials for different apps in JSON format. Example:
+              </p>
+              <pre className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded mb-3 overflow-x-auto text-gray-900 dark:text-gray-100">
+{`{
+  "twitter": {
+    "username": "myuser",
+    "password": "mypass123"
+  },
+  "facebook": {
+    "email": "user@example.com",
+    "password": "pass456"
+  }
+}`}
+              </pre>
+            </div>
+
+            <div>
+              <Label htmlFor="accounts-json">Accounts JSON</Label>
+              <textarea
+                id="accounts-json"
+                value={formData.accounts || "{}"}
+                onChange={(e) => handleInputChange("accounts", e.target.value)}
+                className="w-full h-64 p-3 font-mono text-sm border rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600"
+                placeholder='{"twitter": {"username": "user", "password": "pass"}}'
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Enter valid JSON format. Will be validated when you save.
+              </p>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* UI Inspector Tab - Auto XPath Generation */}
+        <TabsContent value="inspector" className="w-full min-w-0">
+          <UIInspector profileId={profileData.id} />
         </TabsContent>
 
         {/* Custom Field Tab - Temporarily disabled, no backend support yet */}

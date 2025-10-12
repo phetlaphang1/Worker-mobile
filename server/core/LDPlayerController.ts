@@ -200,42 +200,325 @@ export class LDPlayerController {
     }
   }
 
-  async launchInstance(name: string): Promise<void> {
-    try {
-      await execAsync(`"${this.ldConsolePath}" launch --name "${name}"`);
+  /**
+   * Gracefully launch instance với health check và recovery
+   * 1. Launch instance
+   * 2. Wait for boot complete
+   * 3. Connect ADB with retry
+   * 4. Verify device is healthy
+   * 5. Re-enable ADB if needed
+   */
+  async launchInstance(name: string, options?: { retryCount?: number; verifyHealth?: boolean; timeout?: number }): Promise<void> {
+    const { retryCount = 3, verifyHealth = true, timeout = 90000 } = options || {};
 
-      const instance = this.instances.get(name);
-      if (instance) {
+    let lastError: any;
+
+    for (let attempt = 1; attempt <= retryCount; attempt++) {
+      try {
+        let instance = this.instances.get(name);
+
+        // If instance not found in Map, try to discover it from LDPlayer
+        if (!instance) {
+          logger.warn(`Instance ${name} not found in cache, discovering from LDPlayer...`);
+          await this.getAllInstancesFromLDConsole();
+          instance = this.instances.get(name);
+
+          if (!instance) {
+            throw new Error(`Instance ${name} not found`);
+          }
+          logger.info(`Instance ${name} discovered and registered`);
+        }
+
+        logger.info(`[STARTUP] Launching instance: ${name} (attempt ${attempt}/${retryCount})...`);
+
+        // Step 1: Launch instance
+        const launchPromise = execAsync(`"${this.ldConsolePath}" launch --name "${name}"`);
+
+        await Promise.race([
+          launchPromise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Launch timeout')), timeout)
+          )
+        ]);
+
+        // Small delay to ensure process starts
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Step 2: Ensure ADB is enabled (in case it was disabled)
+        try {
+          logger.info(`[STARTUP] Ensuring ADB debugging is enabled...`);
+          await execAsync(`"${this.ldConsolePath}" setprop --name "${name}" --key "adb.debug" --value "1"`);
+        } catch (error) {
+          logger.warn(`[STARTUP] Failed to enable ADB (may already be enabled):`, error);
+        }
+
+        // Update status early
         instance.status = 'running';
 
-        // Wait for instance to be ready
-        await this.waitForDevice(instance.port);
+        // Step 3: Wait for device boot completion
+        logger.info(`[STARTUP] Waiting for device to boot...`);
+        await this.waitForDevice(instance.port, timeout);
 
-        // Connect ADB
-        await this.connectADB(instance.port);
+        // Step 4: Connect ADB with retry logic
+        logger.info(`[STARTUP] Connecting ADB...`);
+        let adbConnected = false;
+        for (let adbAttempt = 1; adbAttempt <= 3; adbAttempt++) {
+          try {
+            await this.connectADB(instance.port);
+
+            // Verify connection
+            const devicesResult = await execAsync(`"${this.adbPath}" devices`);
+            if (devicesResult.stdout.includes(`127.0.0.1:${instance.port}`) ||
+                devicesResult.stdout.includes(`emulator-${instance.port}`)) {
+              adbConnected = true;
+              break;
+            }
+
+            logger.warn(`[STARTUP] ADB connection verification failed, retrying... (${adbAttempt}/3)`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          } catch (error) {
+            logger.warn(`[STARTUP] ADB connection attempt ${adbAttempt} failed:`, error);
+            if (adbAttempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        }
+
+        if (!adbConnected) {
+          throw new Error('Failed to establish ADB connection after multiple attempts');
+        }
+
+        // Step 5: Health verification (optional)
+        if (verifyHealth) {
+          logger.info(`[STARTUP] Verifying instance health...`);
+          try {
+            // Test basic ADB command
+            await this.executeAdbCommand(instance.port, 'shell echo "health_check"');
+            logger.info(`[STARTUP] Health check passed`);
+          } catch (error) {
+            logger.warn(`[STARTUP] Health check failed, but instance may still be usable:`, error);
+          }
+        }
+
+        logger.info(`✅ [STARTUP] Instance ${name} launched successfully and ready`);
+        return; // Success!
+
+      } catch (error) {
+        lastError = error;
+        logger.error(`[STARTUP] Launch attempt ${attempt}/${retryCount} failed:`, error);
+
+        // Cleanup before retry
+        try {
+          const instance = this.instances.get(name);
+          if (instance) {
+            instance.status = 'stopped';
+          }
+        } catch (cleanupError) {
+          logger.warn(`[STARTUP] Cleanup after failed launch:`, cleanupError);
+        }
+
+        if (attempt < retryCount) {
+          logger.info(`[STARTUP] Retrying in 5 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      }
+    }
+
+    // All attempts failed
+    logger.error(`[STARTUP] Failed to launch instance ${name} after ${retryCount} attempts`);
+    throw new Error(`Failed to launch instance ${name}: ${lastError?.message || 'Unknown error'}`);
+  }
+
+  /**
+   * Gracefully stop instance với cleanup
+   * 1. Disconnect ADB
+   * 2. Force stop all apps (optional)
+   * 3. Quit instance
+   * 4. Verify shutdown
+   */
+  async stopInstance(name: string, options?: { forceCleanup?: boolean; timeout?: number }): Promise<void> {
+    const { forceCleanup = true, timeout = 30000 } = options || {};
+
+    try {
+      let instance = this.instances.get(name);
+
+      // If instance not found in Map, try to discover it from LDPlayer
+      if (!instance) {
+        logger.warn(`Instance ${name} not found in cache, discovering from LDPlayer...`);
+        await this.getAllInstancesFromLDConsole();
+        instance = this.instances.get(name);
+
+        if (!instance) {
+          throw new Error(`Instance ${name} not found`);
+        }
+        logger.info(`Instance ${name} discovered and registered`);
       }
 
-      logger.info(`Launched instance: ${name}`);
+      logger.info(`[SHUTDOWN] Starting graceful shutdown for instance: ${name}`);
+
+      // Step 1: Disconnect ADB first (prevent connection issues)
+      if (instance.status === 'running') {
+        try {
+          logger.info(`[SHUTDOWN] Disconnecting ADB from port ${instance.port}...`);
+          await this.disconnectADB(instance.port);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          logger.warn(`[SHUTDOWN] Failed to disconnect ADB (may already be disconnected):`, error);
+        }
+
+        // Step 2: Force stop all apps (optional cleanup)
+        if (forceCleanup) {
+          try {
+            logger.info(`[SHUTDOWN] Cleaning up running apps...`);
+            // Go to home screen first
+            await execAsync(`"${this.adbPath}" -s 127.0.0.1:${instance.port} shell input keyevent KEYCODE_HOME`).catch(() => {});
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error) {
+            logger.warn(`[SHUTDOWN] Failed to cleanup apps:`, error);
+          }
+        }
+      }
+
+      // Step 3: Quit instance
+      logger.info(`[SHUTDOWN] Sending quit command to ${name}...`);
+      const shutdownPromise = execAsync(`"${this.ldConsolePath}" quit --name "${name}"`);
+
+      // Wait with timeout
+      await Promise.race([
+        shutdownPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Shutdown timeout')), timeout)
+        )
+      ]);
+
+      // Step 4: Verify shutdown (check if instance is actually stopped)
+      logger.info(`[SHUTDOWN] Verifying shutdown...`);
+      let verified = false;
+      for (let i = 0; i < 10; i++) {
+        try {
+          const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`);
+          if (!runningListResult.stdout.includes(name)) {
+            verified = true;
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          // runninglist might fail, assume stopped
+          verified = true;
+          break;
+        }
+      }
+
+      if (!verified) {
+        logger.warn(`[SHUTDOWN] Could not verify shutdown for ${name}, but continuing...`);
+      }
+
+      // Update status
+      instance.status = 'stopped';
+
+      logger.info(`✅ [SHUTDOWN] Instance ${name} stopped successfully`);
     } catch (error) {
-      logger.error(`Failed to launch instance ${name}:`, error);
+      logger.error(`[SHUTDOWN] Failed to stop instance ${name}:`, error);
       throw error;
     }
   }
 
-  async stopInstance(name: string): Promise<void> {
+  /**
+   * Gracefully restart instance
+   * Safer than stop + launch because it maintains state consistency
+   */
+  async restartInstance(name: string, options?: { timeout?: number; verifyHealth?: boolean }): Promise<void> {
+    const { timeout = 120000, verifyHealth = true } = options || {};
+
     try {
-      await execAsync(`"${this.ldConsolePath}" quit --name "${name}"`);
+      logger.info(`[RESTART] Restarting instance: ${name}...`);
 
-      const instance = this.instances.get(name);
-      if (instance) {
-        instance.status = 'stopped';
-      }
+      // Stop gracefully
+      await this.stopInstance(name, { forceCleanup: false, timeout: 30000 });
 
-      logger.info(`Stopped instance: ${name}`);
+      // Wait a bit for complete shutdown
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Launch with health check
+      await this.launchInstance(name, { retryCount: 2, verifyHealth, timeout: timeout - 33000 });
+
+      logger.info(`✅ [RESTART] Instance ${name} restarted successfully`);
     } catch (error) {
-      logger.error(`Failed to stop instance ${name}:`, error);
+      logger.error(`[RESTART] Failed to restart instance ${name}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Sync instance state from LDPlayer
+   * Call this after unexpected shutdowns to resync state
+   */
+  async syncInstanceState(name: string): Promise<void> {
+    try {
+      let instance = this.instances.get(name);
+
+      // If instance not found in Map, try to discover it from LDPlayer
+      if (!instance) {
+        logger.warn(`Instance ${name} not found in cache, discovering from LDPlayer...`);
+        await this.getAllInstancesFromLDConsole();
+        instance = this.instances.get(name);
+
+        if (!instance) {
+          throw new Error(`Instance ${name} not found`);
+        }
+        logger.info(`Instance ${name} discovered and registered`);
+      }
+
+      // Check if instance is actually running
+      const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`).catch(() => ({ stdout: '' }));
+      const isActuallyRunning = runningListResult.stdout.includes(name);
+
+      // Check ADB connectivity
+      const devicesResult = await execAsync(`"${this.adbPath}" devices`);
+      const isAdbConnected = devicesResult.stdout.includes(`127.0.0.1:${instance.port}`) ||
+                            devicesResult.stdout.includes(`emulator-${instance.port}`);
+
+      // Update state
+      const oldStatus = instance.status;
+      instance.status = isActuallyRunning ? 'running' : 'stopped';
+
+      if (oldStatus !== instance.status) {
+        logger.info(`[SYNC] Instance ${name} state synced: ${oldStatus} -> ${instance.status}`);
+      }
+
+      // If running but ADB not connected, reconnect
+      if (isActuallyRunning && !isAdbConnected) {
+        logger.warn(`[SYNC] Instance ${name} is running but ADB not connected, reconnecting...`);
+        try {
+          await this.connectADB(instance.port);
+        } catch (error) {
+          logger.error(`[SYNC] Failed to reconnect ADB for ${name}:`, error);
+        }
+      }
+
+      logger.info(`[SYNC] Instance ${name} state synchronized`);
+    } catch (error) {
+      logger.error(`[SYNC] Failed to sync state for ${name}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync all instances state
+   */
+  async syncAllInstancesState(): Promise<void> {
+    logger.info('[SYNC] Syncing all instances state...');
+    const instances = [...this.instances.keys()];
+
+    for (const name of instances) {
+      try {
+        await this.syncInstanceState(name);
+      } catch (error) {
+        logger.error(`[SYNC] Failed to sync ${name}:`, error);
+      }
+    }
+
+    logger.info('[SYNC] All instances state synchronized');
   }
 
   async removeInstance(name: string): Promise<void> {
@@ -1112,11 +1395,66 @@ export class LDPlayerController {
     }
   }
 
-  async stopAllInstances(): Promise<void> {
-    const instances = [...this.instances.keys()];
-    for (const name of instances) {
-      await this.stopInstance(name);
+  /**
+   * Stop all running instances gracefully with proper sequencing
+   * Includes filtering, delays, and error handling
+   */
+  async stopAllInstances(options?: { onlyRunning?: boolean; delay?: number }): Promise<{
+    successCount: number;
+    failCount: number;
+    skippedCount: number;
+  }> {
+    const { onlyRunning = true, delay = 3000 } = options || {};
+
+    const instances = [...this.instances.values()];
+    let successCount = 0;
+    let failCount = 0;
+    let skippedCount = 0;
+
+    // Filter: only stop running instances
+    const instancesToStop = onlyRunning
+      ? instances.filter(i => i.status === 'running')
+      : instances;
+
+    if (instancesToStop.length === 0) {
+      logger.info('[STOP ALL] No running instances to stop');
+      return { successCount: 0, failCount: 0, skippedCount: instances.length };
     }
+
+    logger.info(`[STOP ALL] Stopping ${instancesToStop.length} instance(s)...`);
+
+    for (let i = 0; i < instancesToStop.length; i++) {
+      const instance = instancesToStop[i];
+
+      try {
+        logger.info(`[STOP ALL] Stopping ${i + 1}/${instancesToStop.length}: ${instance.name}`);
+
+        await this.stopInstance(instance.name, { forceCleanup: true, timeout: 30000 });
+        successCount++;
+
+        logger.info(`[STOP ALL] ✅ Successfully stopped ${instance.name}`);
+
+        // Add delay between stops (except for the last one)
+        if (i < instancesToStop.length - 1) {
+          logger.info(`[STOP ALL] Waiting ${delay}ms before next stop...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        logger.error(`[STOP ALL] ❌ Failed to stop ${instance.name}:`, error);
+        failCount++;
+
+        // Continue with delay even on error to prevent race conditions
+        if (i < instancesToStop.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, Math.min(delay, 2000)));
+        }
+      }
+    }
+
+    skippedCount = instances.length - instancesToStop.length;
+
+    logger.info(`[STOP ALL] Complete: ${successCount} stopped, ${failCount} failed, ${skippedCount} skipped`);
+
+    return { successCount, failCount, skippedCount };
   }
 
   // Install app using ldconsole (more reliable than ADB)
@@ -1186,7 +1524,7 @@ export class LDPlayerController {
   // Get all instances from ldconsole (scan existing instances)
   async getAllInstancesFromLDConsole(): Promise<Array<{ name: string; index: number; port: number }>> {
     try {
-      const listResult = await execAsync(`"${this.ldConsolePath}" list`);
+      const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
       const lines = listResult.stdout.trim().split('\n');
 
       const instances: Array<{ name: string; index: number; port: number }> = [];
@@ -1195,19 +1533,25 @@ export class LDPlayerController {
       const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`).catch(() => ({ stdout: '' }));
       const runningInstances = runningListResult.stdout.trim().split('\n').filter((line: string) => line.length > 0);
 
-      // Get all connected ADB devices and their ports
-      const devicesResult = await execAsync(`"${this.adbPath}" devices`);
-      const devicePorts = new Map<number, number>(); // index -> port mapping
+      // Get all connected ADB devices via LDPlayer's ADB (not system ADB!)
+      // Use ldconsole adb command to get devices from LDPlayer's internal ADB server
+      const devicesResult = await execAsync(`"${this.ldConsolePath}" adb --command "devices"`).catch(() => ({ stdout: '' }));
+      const devicePorts = new Map<string, number>(); // instanceName -> port mapping
 
+      // Parse devices output: "emulator-5572  device"
       for (const line of devicesResult.stdout.trim().split('\n')) {
         const emulatorMatch = line.match(/emulator-(\d+)\s+device/);
-        const ipMatch = line.match(/127\.0\.0\.1:(\d+)\s+device/);
-        if (emulatorMatch || ipMatch) {
-          const port = parseInt((emulatorMatch || ipMatch)![1], 10);
-          // Try to match port to instance by checking running list order
-          devicePorts.set(devicePorts.size, port);
+        if (emulatorMatch) {
+          const port = parseInt(emulatorMatch[1], 10);
+          devicePorts.set(`port_${devicePorts.size}`, port);
+          logger.debug(`Found ADB device on port ${port}`);
         }
       }
+
+      logger.info(`Found ${devicePorts.size} ADB devices via ldconsole`);
+
+      // Convert devicePorts Map to Array of ports
+      const adbPorts = Array.from(devicePorts.values());
 
       let runningIndex = 0;
       for (const line of lines) {
@@ -1217,15 +1561,13 @@ export class LDPlayerController {
           const name = parts[1];
 
           // Check if instance is running
-          const isRunning = runningInstances.some(runningLine => {
-            const runningParts = runningLine.split(',');
-            return runningParts.length >= 2 && runningParts[1] === name;
-          });
+          const isRunning = runningInstances.includes(name);
 
           // Use actual ADB port if running, otherwise use formula
           let port: number;
-          if (isRunning && devicePorts.has(runningIndex)) {
-            port = devicePorts.get(runningIndex)!;
+          if (isRunning && runningIndex < adbPorts.length) {
+            port = adbPorts[runningIndex];
+            logger.info(`Mapped running instance ${name} (index ${index}) to ADB port ${port}`);
             runningIndex++;
           } else {
             port = 5555 + index * 2;

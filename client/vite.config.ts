@@ -17,7 +17,7 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 5173,
+    port: 7000,
     host: true, // Listen on all addresses
     strictPort: true,
     open: false,

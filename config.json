@@ -2,7 +2,7 @@
   "ldPlayerPath": "D:\\LDPlayer\\LDPlayer9",
   "ldConsolePath": "D:\\LDPlayer\\LDPlayer9\\ldconsole.exe",
   "adbPath": "D:\\LDPlayer\\LDPlayer9\\adb.exe",
-  "port": 5050,
+  "port": 7000,
   "concurrencyLimit": 3,
   "screenshotsDir": "./screenshots",
   "logsDir": "./logs",

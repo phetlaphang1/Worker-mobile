@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Profile } from '@shared/schema';
+import { API_BASE_URL } from '@/config/api.config';
 
 // Import components
 import ProfileDetailsModal from "../modals-details/profileDetails";
@@ -97,7 +98,7 @@ export default function InstanceManager({
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch('http://localhost:5051/api/settings');
+        const response = await fetch(`${API_BASE_URL}/api/settings`);
         const data = await response.json();
         if (data.profileSettings?.isTwitterCaring !== undefined) {
           setIsTwitterCaring(data.profileSettings.isTwitterCaring);
@@ -139,7 +140,7 @@ export default function InstanceManager({
     setIsLoadingProfileDetails(true);
     try {
       // Fetch latest profile data from API
-      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}`);
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profile.id}`);
       if (response.ok) {
         const fullProfileData = await response.json();
         setSelectedProfile(fullProfileData);
@@ -178,7 +179,7 @@ export default function InstanceManager({
 
   const handleLogClick = async (profile: Profile) => {
     try {
-      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}/log`);
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profile.id}/log`);
       if (response.ok) {
         const data = await response.json();
         setLogDetails({ profileId: profile.id, content: data.content });
@@ -201,7 +202,7 @@ export default function InstanceManager({
 
   const handleOutputClick = async (profile: Profile) => {
     try {
-      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}/output`);
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profile.id}/output`);
       const data = await response.json();
       setOutputDetails({ profileId: profile.id, ...data });
       setIsOutputModalOpen(true);
@@ -217,7 +218,7 @@ export default function InstanceManager({
 
   const handleFileDownload = async (file: any, profileId: number) => {
     try {
-      const response = await fetch(`http://localhost:5051/api/profiles/${profileId}/output/${file.name}`);
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}/output/${file.name}`);
       if (!response.ok) {
         throw new Error('Failed to download file');
       }
@@ -248,7 +249,7 @@ export default function InstanceManager({
 
   const showScriptDetails = async (profileId: number) => {
     try {
-      const response = await fetch(`http://localhost:5051/api/profiles/${profileId}/script`);
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}/script`);
       if (response.ok) {
         const data = await response.json();
         setScriptDetails({ profileId, content: data.content || "" });
@@ -257,7 +258,7 @@ export default function InstanceManager({
       } else {
         // Create new script file
         const defaultContent = '// New script file\nconsole.log("Hello from profile script!");';
-        const createResponse = await fetch(`http://localhost:5051/api/profiles/${profileId}/script`, {
+        const createResponse = await fetch(`${API_BASE_URL}/api/profiles/${profileId}/script`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: defaultContent }),
@@ -303,7 +304,7 @@ export default function InstanceManager({
 
       // Use server-side batch launch with resource management
       if (inactiveProfiles.length > 0) {
-        const response = await fetch('http://localhost:5051/api/profiles/batch-launch', {
+        const response = await fetch(`${API_BASE_URL}/api/profiles/batch-launch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -332,11 +333,22 @@ export default function InstanceManager({
       });
 
       // Wait for instances to stabilize
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // PHASE 2: Execute scripts using resource-managed batch processing
-      // Run scripts on ALL profiles (both already active and newly launched)
-      const readyProfiles = profiles.filter(p => p.status === 'active');
+      // Fetch FRESH profile data to get updated statuses after launching
+      const freshProfilesResponse = await fetch(`${API_BASE_URL}/api/profiles`);
+      const freshProfiles: Profile[] = await freshProfilesResponse.json();
+
+      // Debug: Log all profile statuses
+      console.log(`[RUN ALL] Fresh profile statuses:`, freshProfiles.map(p => ({
+        id: p.id,
+        name: p.name,
+        status: p.status
+      })));
+
+      // Run scripts on ALL ACTIVE profiles (using fresh data)
+      const readyProfiles = freshProfiles.filter(p => p.status === 'active');
 
       console.log(`[RUN ALL] Ready profiles for scripts: ${readyProfiles.length}`);
 
@@ -347,7 +359,7 @@ export default function InstanceManager({
         });
 
         // Use server-side batch script execution
-        const response = await fetch('http://localhost:5051/api/profiles/batch-execute-scripts', {
+        const response = await fetch(`${API_BASE_URL}/api/profiles/batch-execute-scripts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -388,25 +400,67 @@ export default function InstanceManager({
     let failCount = 0;
 
     try {
-      // Stop sequentially with delay
-      for (const profile of profiles) {
+      // Step 1: Refresh status to get ACTUAL running instances from LDPlayer
+      toast({
+        title: "Checking Running Instances",
+        description: "Syncing with LDPlayer...",
+      });
+
+      await refreshStatusMutation.mutateAsync();
+
+      // Step 2: Fetch fresh profile data
+      const freshResponse = await fetch(`${API_BASE_URL}/api/profiles`);
+      const freshProfiles: Profile[] = await freshResponse.json();
+
+      // Step 3: Filter only ACTIVE/RUNNING profiles (actually running)
+      const activeProfiles = freshProfiles.filter(p => p.status === 'active' || p.status === 'running');
+
+      if (activeProfiles.length === 0) {
+        toast({
+          title: "No Active Instances",
+          description: "All instances are already stopped",
+        });
+        return;
+      }
+
+      console.log(`[STOP ALL] Stopping ${activeProfiles.length} active instance(s)...`);
+
+      // Stop sequentially with PROPER delay (2-3 seconds between each)
+      for (let i = 0; i < activeProfiles.length; i++) {
+        const profile = activeProfiles[i];
+
         try {
+          console.log(`[STOP ALL] Stopping ${i + 1}/${activeProfiles.length}: ${profile.name} (ID: ${profile.id})`);
+
           await stopProfileMutation.mutateAsync({ profileId: profile.id });
           successCount++;
-          // Add small delay between stops
-          if (successCount < profiles.length) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+
+          console.log(`[STOP ALL] ✅ Stopped ${profile.name}`);
+
+          // CRITICAL: Wait 2-3 seconds between stops to allow graceful shutdown
+          if (i < activeProfiles.length - 1) {
+            console.log(`[STOP ALL] Waiting 3 seconds before next stop...`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ 3 seconds
           }
         } catch (error) {
-          console.error(`Failed to stop profile ${profile.id}:`, error);
+          console.error(`[STOP ALL] ❌ Failed to stop profile ${profile.id}:`, error);
           failCount++;
+
+          // Continue with delay even on error to prevent race conditions
+          if (i < activeProfiles.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
         }
       }
 
+      // Refresh profiles list after all stops
+      await queryClient.invalidateQueries({ queryKey: ['profiles'] });
+
+      // Show results
       if (successCount > 0) {
         toast({
           title: "Stop All Complete",
-          description: `Stopped ${successCount} instance${successCount > 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
+          description: `Stopped ${successCount} instance${successCount !== 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
         });
       } else {
         toast({
@@ -416,6 +470,7 @@ export default function InstanceManager({
         });
       }
     } catch (error) {
+      console.error('[STOP ALL] Error:', error);
       toast({
         title: "Error",
         description: "Failed to stop all instances",
@@ -617,7 +672,7 @@ export default function InstanceManager({
         title={`Output Folder - Profile ${outputDetails?.profileId}`}
         path={outputDetails?.path || ""}
         files={outputDetails?.files || []}
-        baseUrl={`http://localhost:5051/api/profiles/${outputDetails?.profileId}`}
+        baseUrl={`${API_BASE_URL}/api/profiles/${outputDetails?.profileId}`}
       />
 
       <ImagePreviewModal

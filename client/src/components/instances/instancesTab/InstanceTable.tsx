@@ -175,7 +175,7 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
               </TableCell>
               <TableCell className="text-right py-1">
                 <ExecutionActions
-                  isRunning={profile.status === 'active'}
+                  isRunning={profile.status === 'active' || profile.status === 'running'}
                   onRun={() => onRunProfile(profile.id)}
                   onStop={() => onStopProfile(profile.id)}
                   onViewLog={() => onLogClick(profile)}
@@ -204,12 +204,17 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
 
               {/* Status Column */}
               <TableCell className="text-sm text-left py-1">
-                <Badge
-                  variant={getStatusBadgeVariant(profile.status)}
-                  className={`text-xs ${getStatusBadgeClasses(profile.status)}`}
-                >
-                  {mapLegacyStatus(profile.status)}
-                </Badge>
+                {(() => {
+                  const mappedStatus = mapLegacyStatus(profile.status);
+                  return (
+                    <Badge
+                      variant={getStatusBadgeVariant(mappedStatus)}
+                      className={`text-xs ${getStatusBadgeClasses(mappedStatus)}`}
+                    >
+                      {mappedStatus}
+                    </Badge>
+                  );
+                })()}
               </TableCell>
 
               {/* Handle Column */}

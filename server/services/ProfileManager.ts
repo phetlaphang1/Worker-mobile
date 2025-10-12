@@ -44,7 +44,7 @@ export interface MobileProfile {
     };
     [key: string]: any;
   };
-  status: 'active' | 'inactive' | 'suspended';
+  status: 'active' | 'inactive' | 'suspended' | 'running';
   createdAt: Date;
   lastUsed?: Date;
   metadata?: Record<string, any>;
@@ -467,6 +467,14 @@ export class ProfileManager {
       // Update all profiles based on running status
       for (const profile of this.profiles.values()) {
         const isRunning = runningInstances.has(profile.instanceName);
+
+        // IMPORTANT: Don't override 'running' status (script is executing)
+        // Only update if status is 'active' or 'inactive'
+        if (profile.status === 'running') {
+          // Skip - script is currently executing, don't touch this status
+          continue;
+        }
+
         const newStatus = isRunning ? 'active' : 'inactive';
 
         if (profile.status !== newStatus) {
@@ -981,13 +989,15 @@ export class ProfileManager {
     active: number;
     inactive: number;
     suspended: number;
+    running: number;
   } {
     const profiles = this.getAllProfiles();
     return {
       total: profiles.length,
       active: profiles.filter(p => p.status === 'active').length,
       inactive: profiles.filter(p => p.status === 'inactive').length,
-      suspended: profiles.filter(p => p.status === 'suspended').length
+      suspended: profiles.filter(p => p.status === 'suspended').length,
+      running: profiles.filter(p => p.status === 'running').length
     };
   }
 

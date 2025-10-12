@@ -190,6 +190,11 @@ export default function ProfileDetailsModal({
           ? profileData.customField.replace(/\\n/g, '\n').replace(/\\"/g, '"')
           : JSON.stringify(profileData.customField, null, 2))
       : "",
+    accounts: profileData?.metadata?.accounts
+      ? (typeof profileData.metadata.accounts === 'string'
+          ? profileData.metadata.accounts
+          : JSON.stringify(profileData.metadata.accounts, null, 2))
+      : "{}",
     isIncognito: profileData?.isIncognito || false,
     isHeadless: profileData?.isHeadless || false,
     // Instance hardware settings
@@ -202,7 +207,7 @@ export default function ProfileDetailsModal({
   useEffect(() => {
     const fetchTaskStatus = async () => {
       try {
-        const response = await apiRequest('GET', `http://localhost:5050/api/tasks?profileId=${profileData?.id}`);
+        const response = await apiRequest('GET', `http://localhost:5051/api/tasks?profileId=${profileData?.id}`);
         const tasks: Task[] = await response.json();
         
         if (tasks && tasks.length > 0) {
@@ -248,6 +253,11 @@ export default function ProfileDetailsModal({
               ? profileData.customField.replace(/\\n/g, '\n').replace(/\\"/g, '"')
               : JSON.stringify(profileData.customField, null, 2))
           : "",
+        accounts: profileData.metadata?.accounts
+          ? (typeof profileData.metadata.accounts === 'string'
+              ? profileData.metadata.accounts
+              : JSON.stringify(profileData.metadata.accounts, null, 2))
+          : "{}",
         isIncognito: profileData.isIncognito || false,
         isHeadless: profileData.isHeadless || false,
         // Instance hardware settings
@@ -262,7 +272,7 @@ export default function ProfileDetailsModal({
     mutationFn: async (updatedData: any) => {
       return apiRequest(
         "PUT",
-        `http://localhost:5050/api/profiles/${profileData.id}`,
+        `http://localhost:5051/api/profiles/${profileData.id}`,
         updatedData,
       );
     },
@@ -271,7 +281,7 @@ export default function ProfileDetailsModal({
         title: "Profile Updated",
         description: "Profile details have been updated successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5050/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
       onClose();
     },
     onError: (error: any) => {
@@ -309,6 +319,21 @@ export default function ProfileDetailsModal({
         }
       }
 
+      // Parse accounts JSON if provided
+      let accountsData = {};
+      if (formData.accounts.trim()) {
+        try {
+          accountsData = JSON.parse(formData.accounts);
+        } catch (error) {
+          toast({
+            title: "Invalid JSON",
+            description: "Accounts data must be valid JSON format",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       // Create the update payload from form data
       const updateData = {
         name: formData.name,
@@ -333,6 +358,11 @@ export default function ProfileDetailsModal({
           resolution: formData.resolution,
           cpu: formData.cpu,
           memory: formData.memory,
+        },
+        // Save accounts to metadata
+        metadata: {
+          ...profileData.metadata,
+          accounts: accountsData,
         },
       };
 

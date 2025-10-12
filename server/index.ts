@@ -101,6 +101,7 @@ function broadcastLog(logType: 'task' | 'profile', id: number, logMessage: strin
 // Inject broadcast functions into services for WebSocket updates
 taskExecutor.setBroadcast(broadcast);
 directScriptService.setBroadcast(broadcastLog);
+directScriptService.setBroadcastStatus(broadcast); // For profile status updates
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
@@ -232,6 +233,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Start services
 async function startServices() {
   try {
+    // Load all instances from LDPlayer FIRST (critical!)
+    await ldPlayerController.getAllInstancesFromLDConsole();
+    logger.info('LDPlayer instances loaded');
+
     // Initialize profile manager first
     await profileManager.initialize();
     logger.info('Profile manager initialized');
@@ -266,28 +271,56 @@ async function startServices() {
 }
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
+async function gracefulShutdown(signal: string) {
+  logger.info(`${signal} received, shutting down gracefully...`);
 
-  await taskExecutor.stop();
-  await profileManager.deactivateAllProfiles();
+  try {
+    // Step 1: Stop task executor (no new tasks)
+    logger.info('Stopping task executor...');
+    await taskExecutor.stop();
 
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
-  });
+    // Step 2: Deactivate all profiles (stops scripts)
+    logger.info('Deactivating all profiles...');
+    await profileManager.deactivateAllProfiles();
+
+    // Step 3: Stop all LDPlayer instances properly
+    logger.info('Stopping all LDPlayer instances...');
+    const stopResult = await ldPlayerController.stopAllInstances({
+      onlyRunning: true,
+      delay: 2000
+    });
+    logger.info(`Stopped ${stopResult.successCount} instances, ${stopResult.failCount} failed`);
+
+    // Step 4: Close server
+    server.close(() => {
+      logger.info('Server closed successfully');
+      process.exit(0);
+    });
+
+    // Force exit after 10 seconds if graceful shutdown hangs
+    setTimeout(() => {
+      logger.warn('Graceful shutdown timeout, forcing exit...');
+      process.exit(1);
+    }, 10000);
+
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions and unhandled rejections (crash scenarios)
+process.on('uncaughtException', async (error) => {
+  logger.error('Uncaught Exception:', error);
+  await gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-
-  await taskExecutor.stop();
-  await profileManager.deactivateAllProfiles();
-
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
-  });
+process.on('unhandledRejection', async (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  await gracefulShutdown('UNHANDLED_REJECTION');
 });
 
 // Start the application

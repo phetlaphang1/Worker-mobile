@@ -44,7 +44,7 @@ interface OutputDetailsModalProps {
   title: string;
   path: string;
   files: any[];
-  baseUrl: string; // e.g., "http://localhost:5050/api/tasks/4" or "http://localhost:5050/api/profiles/2"
+  baseUrl: string; // e.g., "http://localhost:5051/api/tasks/4" or "http://localhost:5051/api/profiles/2"
 }
 
 export function LogDetailsModal({ isOpen, onClose, title, content, type, id }: LogDetailsModalProps) {

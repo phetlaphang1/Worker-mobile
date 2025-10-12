@@ -445,8 +445,10 @@ export function setupRoutes(app: Express, services: RouteServices) {
   });
 
   // Instance management routes
-  app.get('/api/instances', (req: Request, res: Response) => {
+  app.get('/api/instances', async (req: Request, res: Response) => {
     try {
+      // Auto-sync instance states with LDPlayer before returning
+      await ldPlayerController.syncAllInstancesState();
       const instances = ldPlayerController.getInstances();
       res.json({ instances });
     } catch (error) {
@@ -467,11 +469,56 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/instances/:instanceName/stop', async (req: Request, res: Response) => {
     try {
-      await ldPlayerController.stopInstance(req.params.instanceName);
+      const { forceCleanup = true, timeout = 30000 } = req.body;
+      await ldPlayerController.stopInstance(req.params.instanceName, { forceCleanup, timeout });
       res.json({ success: true });
     } catch (error) {
       logger.error('Error stopping instance:', error);
-      res.status(500).json({ error: 'Failed to stop instance' });
+      res.json({ error: 'Failed to stop instance' });
+    }
+  });
+
+  // Restart instance gracefully
+  app.post('/api/instances/:instanceName/restart', async (req: Request, res: Response) => {
+    try {
+      const { timeout = 120000, verifyHealth = true } = req.body;
+      await ldPlayerController.restartInstance(req.params.instanceName, { timeout, verifyHealth });
+      res.json({ success: true, message: 'Instance restarted successfully' });
+    } catch (error) {
+      logger.error('Error restarting instance:', error);
+      res.status(500).json({ error: 'Failed to restart instance' });
+    }
+  });
+
+  // Sync instance state (fix inconsistent states)
+  app.post('/api/instances/:instanceName/sync-state', async (req: Request, res: Response) => {
+    try {
+      await ldPlayerController.syncInstanceState(req.params.instanceName);
+      const instance = ldPlayerController.getInstance(req.params.instanceName);
+      res.json({
+        success: true,
+        message: 'Instance state synchronized',
+        instance
+      });
+    } catch (error) {
+      logger.error('Error syncing instance state:', error);
+      res.status(500).json({ error: 'Failed to sync instance state' });
+    }
+  });
+
+  // Sync all instances state
+  app.post('/api/instances/sync-all-states', async (req: Request, res: Response) => {
+    try {
+      await ldPlayerController.syncAllInstancesState();
+      const instances = ldPlayerController.getInstances();
+      res.json({
+        success: true,
+        message: 'All instances synchronized',
+        instances
+      });
+    } catch (error) {
+      logger.error('Error syncing all instances:', error);
+      res.status(500).json({ error: 'Failed to sync all instances' });
     }
   });
 
@@ -626,7 +673,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
       const profileId = parseInt(req.params.id);
       const { headless = false } = req.body;
 
-      const profile = profileManager.getProfile(profileId);
+      let profile = profileManager.getProfile(profileId);
       if (!profile) {
         return res.status(404).json({ error: 'Profile not found' });
       }
@@ -634,7 +681,13 @@ export function setupRoutes(app: Express, services: RouteServices) {
       // Activate profile if not already active
       if (profile.status !== 'active') {
         await profileManager.activateProfile(profileId);
+        // Get fresh profile after activation
+        profile = profileManager.getProfile(profileId)!;
       }
+
+      // IMPORTANT: Always get FRESH profile from DB to ensure latest script content
+      // (in case user just updated script but instance was already active)
+      profile = profileManager.getProfile(profileId)!;
 
       // Execute script if exists in profile metadata
       const scriptContent = profile.metadata?.scriptContent;
@@ -655,6 +708,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
           }
         });
       } else {
+        logger.info(`Profile ${profile.name} has no script to execute`);
         res.json({ success: true, message: 'Profile launched (no script to execute)' });
       }
     } catch (error) {
@@ -674,13 +728,18 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
-  // Refresh all profile statuses from LDPlayer
+  // Refresh all profile statuses from LDPlayer (also syncs instance states)
   app.post('/api/profiles/refresh-status', async (req: Request, res: Response) => {
     try {
-      await profileManager.refreshAllProfileStatuses();
-      res.json({ success: true, message: 'Profile statuses refreshed' });
+      // Sync both profiles AND instances for complete status accuracy
+      await Promise.all([
+        profileManager.refreshAllProfileStatuses(),
+        ldPlayerController.syncAllInstancesState()
+      ]);
+
+      res.json({ success: true, message: 'Profile and instance statuses refreshed' });
     } catch (error) {
-      logger.error('Error refreshing profile statuses:', error);
+      logger.error('Error refreshing statuses:', error);
       res.status(500).json({ error: 'Failed to refresh statuses' });
     }
   });
@@ -1842,6 +1901,10 @@ export function setupRoutes(app: Express, services: RouteServices) {
       const failCount = formattedResults.filter(r => !r.success).length;
 
       logger.info(`[BATCH LAUNCH] Completed: ${successCount} success, ${failCount} failed`);
+
+      // Force refresh all profile statuses to ensure accurate status reporting
+      await profileManager.refreshAllProfileStatuses();
+      logger.info(`[BATCH LAUNCH] Profile statuses refreshed after batch launch`);
 
       res.json({
         success: true,

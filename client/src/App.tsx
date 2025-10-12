@@ -110,7 +110,7 @@ export default function App() {
                   LDPlayer Control Center
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  v1.0.0 • localhost:5050
+                  v1.0.0 • localhost:5051
                 </p>
               </div>
             </div>

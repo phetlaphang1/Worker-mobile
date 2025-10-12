@@ -128,8 +128,8 @@ const TaskDetailsModal = ({ task, isOpen, onClose }: TaskDetailsModalProps) => {
   const scriptName = scriptData?.name ?? 'No script';
   // Fetch profiles for selection
   const { data: profiles = [] } = useQuery({
-    queryKey: ["http://localhost:5050/api/profiles"],
-    queryFn: () => fetch("http://localhost:5050/api/profiles").then(res => res.json()),
+    queryKey: ["http://localhost:5051/api/profiles"],
+    queryFn: () => fetch("http://localhost:5051/api/profiles").then(res => res.json()),
   });
 
   const getStatusBadgeVariant = (status: string) => {

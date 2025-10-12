@@ -21,7 +21,20 @@
       "Bash(\"D:\\LDPlayer\\LDPlayer9\\adb.exe\" devices)",
       "Bash(npx tsc:*)",
       "Bash(npm run build:client:*)",
-      "Bash(npm run build:server:*)"
+      "Bash(npm run build:server:*)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\adb.exe\" devices -l)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" getprop --name \"2\" --key \"adb_debug_port\")",
+      "Bash(npx pm2 restart:*)",
+      "Bash(npx pm2 logs:*)",
+      "Bash(npx tsx:*)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" runninglist)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" copy --from 10 --name \"TEST_CLONE_FROM_INDEX\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" copy --from \"test21323\" --name \"TEST_CLONE_SUCCESS\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" copy --from \"test21323\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" backup --name \"test21323\" --file \"D:\\BArmy\\Worker-mobile\\temp\\test_backup.ldbk\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" add --name \"CLONE_VIA_RESTORE_TEST\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" restore --name \"CLONE_VIA_RESTORE_TEST\" --file \"D:\\BArmy\\Worker-mobile\\temp\\test_backup.ldbk\")",
+      "Bash(npx pm2 start:*)"
     ],
     "deny": [],
     "ask": []

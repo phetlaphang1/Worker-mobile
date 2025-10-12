@@ -30,7 +30,7 @@ export function TaskCenterTab() {
     localStorage.getItem('taskCenterUrl') || 'http://localhost:3000'
   );
 
-  const API_BASE = 'http://localhost:5050/api';
+  const API_BASE = 'http://localhost:5051/api';
 
   // Fetch tasks from Task Center
   const fetchTasksFromCenter = async () => {

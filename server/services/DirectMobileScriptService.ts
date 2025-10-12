@@ -26,6 +26,7 @@ export class DirectMobileScriptService {
   private scriptQueue: DirectScriptTask[] = [];
   private runningScripts: Map<string, Promise<any>> = new Map();
   private broadcast?: (logType: 'task' | 'profile', id: number, logMessage: string, timestamp: string) => void;
+  private broadcastStatus?: (type: string, data: any) => void;
 
   constructor(controller: LDPlayerController, profileManager: ProfileManager) {
     this.controller = controller;
@@ -37,6 +38,13 @@ export class DirectMobileScriptService {
    */
   setBroadcast(broadcastFn: (logType: 'task' | 'profile', id: number, logMessage: string, timestamp: string) => void) {
     this.broadcast = broadcastFn;
+  }
+
+  /**
+   * Set broadcast function for profile status updates
+   */
+  setBroadcastStatus(broadcastStatusFn: (type: string, data: any) => void) {
+    this.broadcastStatus = broadcastStatusFn;
   }
 
   /**
@@ -891,10 +899,24 @@ export class DirectMobileScriptService {
       task.startedAt = new Date();
       task.logs?.push(`Script execution started at ${task.startedAt.toISOString()}`);
 
-      console.log(`[DEBUG] Starting PARALLEL execution for task ${task.id}, profile ${task.profileId}`);
+      console.log(`[DEBUG] Starting PARALLEL execution for task ${task.profileId}`);
       logger.info(`Starting PARALLEL execution for task ${task.id}, profile ${task.profileId}`);
 
-      const execution = this.executeScript(task)
+      // ✅ UPDATE PROFILE STATUS TO 'running' FIRST (MUST AWAIT!)
+      console.log(`[DEBUG] About to update profile ${task.profileId} status to 'running'`);
+
+      const execution = (async () => {
+        try {
+          // IMPORTANT: Update status BEFORE executing script
+          await this.updateProfileStatus(task.profileId, 'running');
+          console.log(`[DEBUG] Status updated to 'running' for profile ${task.profileId}`);
+        } catch (err) {
+          logger.error(`Failed to update profile ${task.profileId} status to running:`, err);
+          console.error(`[DEBUG] Failed to update status:`, err);
+        }
+
+        return await this.executeScript(task);
+      })()
         .then(async result => {
           task.status = 'completed';
           task.result = result;
@@ -906,6 +928,9 @@ export class DirectMobileScriptService {
 
           // Save logs to profile for View Log UI
           await this.saveLogsToProfile(task);
+
+          // ✅ UPDATE PROFILE STATUS BACK TO 'active' when script completes
+          await this.updateProfileStatus(task.profileId, 'active');
         })
         .catch(async error => {
           task.status = 'failed';
@@ -918,6 +943,9 @@ export class DirectMobileScriptService {
 
           // Save logs to profile even on failure
           await this.saveLogsToProfile(task);
+
+          // ✅ UPDATE PROFILE STATUS BACK TO 'active' even on failure
+          await this.updateProfileStatus(task.profileId, 'active');
         })
         .finally(() => {
           this.runningScripts.delete(task.id);
@@ -954,6 +982,48 @@ export class DirectMobileScriptService {
 
   private generateTaskId(): string {
     return `direct_script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Update profile status and broadcast via WebSocket
+   */
+  private async updateProfileStatus(profileId: number, status: 'running' | 'active' | 'inactive' | 'suspended') {
+    try {
+      console.log(`[DEBUG updateProfileStatus] Starting update for profile ${profileId} to status: ${status}`);
+
+      const profile = this.profileManager.getProfile(profileId);
+      if (!profile) {
+        logger.warn(`Profile ${profileId} not found, cannot update status`);
+        console.log(`[DEBUG updateProfileStatus] Profile ${profileId} NOT FOUND`);
+        return;
+      }
+
+      console.log(`[DEBUG updateProfileStatus] Profile found, current status: ${profile.status}`);
+
+      // Update profile status in ProfileManager
+      await this.profileManager.updateProfile(profileId, { status });
+      logger.info(`Updated profile ${profileId} status to: ${status}`);
+      console.log(`[DEBUG updateProfileStatus] Profile status updated in DB`);
+
+      // Broadcast status change via WebSocket
+      console.log(`[DEBUG updateProfileStatus] broadcastStatus function exists: ${!!this.broadcastStatus}`);
+      if (this.broadcastStatus) {
+        const payload = {
+          profileId,
+          status,
+          timestamp: new Date().toISOString()
+        };
+        console.log(`[DEBUG updateProfileStatus] Broadcasting payload:`, JSON.stringify(payload));
+        this.broadcastStatus('profile_status_update', payload);
+        logger.info(`Broadcasted status update for profile ${profileId}: ${status}`);
+        console.log(`[DEBUG updateProfileStatus] Broadcast completed`);
+      } else {
+        console.error(`[DEBUG updateProfileStatus] broadcastStatus is NULL! Cannot broadcast!`);
+      }
+    } catch (error) {
+      logger.error(`Failed to update profile ${profileId} status:`, error);
+      console.error(`[DEBUG updateProfileStatus] ERROR:`, error);
+    }
   }
 
   /**
