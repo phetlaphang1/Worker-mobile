@@ -11,6 +11,7 @@ import MobileScriptExecutor from './services/MobileScriptExecutor.js';
 import AppiumScriptService from './services/AppiumScriptService.js';
 import DirectMobileScriptService from './services/DirectMobileScriptService.js';
 import UIInspectorService from './services/UIInspectorService.js';
+import DeviceMonitor from './services/DeviceMonitor.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
@@ -56,6 +57,13 @@ const directScriptService = new DirectMobileScriptService(ldPlayerController, pr
 
 // UI Inspector Service - Auto XPath generation
 const uiInspectorService = new UIInspectorService(ldPlayerController);
+
+// Device Monitor - Real-time instance monitoring and logcat
+const deviceMonitor = new DeviceMonitor(ldPlayerController, {
+  checkInterval: 5000, // Check every 5 seconds
+  enableLogcat: true,
+  enableHealthCheck: true
+});
 
 // TaskExecutor can use either service
 // For simplicity, we default to DirectScriptService (no Appium server needed)
@@ -206,7 +214,8 @@ setupRoutes(app, {
   scriptExecutor,
   appiumScriptService, // For advanced users who want Appium
   directScriptService, // For most users - simple ADB automation
-  uiInspectorService // Auto XPath generation
+  uiInspectorService, // Auto XPath generation
+  deviceMonitor // Real-time monitoring and logcat
 });
 
 // Serve React app for all non-API routes
@@ -245,6 +254,10 @@ async function startServices() {
     await taskExecutor.start();
     logger.info('Task executor started');
 
+    // Start device monitor
+    await deviceMonitor.start();
+    logger.info('Device monitor started');
+
     // Server port
     const port = process.env.PORT || 5051;
 
@@ -275,15 +288,19 @@ async function gracefulShutdown(signal: string) {
   logger.info(`${signal} received, shutting down gracefully...`);
 
   try {
-    // Step 1: Stop task executor (no new tasks)
+    // Step 1: Stop device monitor
+    logger.info('Stopping device monitor...');
+    await deviceMonitor.stop();
+
+    // Step 2: Stop task executor (no new tasks)
     logger.info('Stopping task executor...');
     await taskExecutor.stop();
 
-    // Step 2: Deactivate all profiles (stops scripts)
+    // Step 3: Deactivate all profiles (stops scripts)
     logger.info('Deactivating all profiles...');
     await profileManager.deactivateAllProfiles();
 
-    // Step 3: Stop all LDPlayer instances properly
+    // Step 4: Stop all LDPlayer instances properly
     logger.info('Stopping all LDPlayer instances...');
     const stopResult = await ldPlayerController.stopAllInstances({
       onlyRunning: true,
@@ -291,7 +308,7 @@ async function gracefulShutdown(signal: string) {
     });
     logger.info(`Stopped ${stopResult.successCount} instances, ${stopResult.failCount} failed`);
 
-    // Step 4: Close server
+    // Step 5: Close server
     server.close(() => {
       logger.info('Server closed successfully');
       process.exit(0);

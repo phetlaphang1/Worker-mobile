@@ -906,15 +906,8 @@ export class DirectMobileScriptService {
       console.log(`[DEBUG] About to update profile ${task.profileId} status to 'running'`);
 
       const execution = (async () => {
-        try {
-          // IMPORTANT: Update status BEFORE executing script
-          await this.updateProfileStatus(task.profileId, 'running');
-          console.log(`[DEBUG] Status updated to 'running' for profile ${task.profileId}`);
-        } catch (err) {
-          logger.error(`Failed to update profile ${task.profileId} status to running:`, err);
-          console.error(`[DEBUG] Failed to update status:`, err);
-        }
-
+        // ⚠️ NO LONGER UPDATE PROFILE STATUS - Task status is now separate from Instance status
+        console.log(`[DEBUG] Starting script execution for task ${task.id}, profile ${task.profileId}`);
         return await this.executeScript(task);
       })()
         .then(async result => {
@@ -929,8 +922,7 @@ export class DirectMobileScriptService {
           // Save logs to profile for View Log UI
           await this.saveLogsToProfile(task);
 
-          // ✅ UPDATE PROFILE STATUS BACK TO 'active' when script completes
-          await this.updateProfileStatus(task.profileId, 'active');
+          // ⚠️ NO LONGER UPDATE PROFILE STATUS - Task status is now independent
         })
         .catch(async error => {
           task.status = 'failed';
@@ -944,8 +936,7 @@ export class DirectMobileScriptService {
           // Save logs to profile even on failure
           await this.saveLogsToProfile(task);
 
-          // ✅ UPDATE PROFILE STATUS BACK TO 'active' even on failure
-          await this.updateProfileStatus(task.profileId, 'active');
+          // ⚠️ NO LONGER UPDATE PROFILE STATUS - Task status is now independent
         })
         .finally(() => {
           this.runningScripts.delete(task.id);
@@ -1028,6 +1019,7 @@ export class DirectMobileScriptService {
 
   /**
    * Save logs to profile metadata for View Log UI
+   * NEW: Saves execution history instead of overwriting
    */
   private async saveLogsToProfile(task: DirectScriptTask) {
     try {
@@ -1046,21 +1038,50 @@ export class DirectMobileScriptService {
 
       const fullLog = logHeader + logContent + logFooter;
 
-      // Update profile with log
+      // Create execution record
+      const executionRecord = {
+        taskId: task.id,
+        status: task.status,
+        timestamp: new Date().toISOString(),
+        startedAt: task.startedAt?.toISOString(),
+        completedAt: task.completedAt?.toISOString(),
+        duration: task.startedAt && task.completedAt
+          ? task.completedAt.getTime() - task.startedAt.getTime()
+          : 0,
+        logs: task.logs || [],
+        error: task.error,
+        fullLog: fullLog
+      };
+
+      // Get existing execution history (or create new array)
+      const executionHistory = profile.metadata?.executionHistory || [];
+
+      // Add new execution to the BEGINNING of array (newest first)
+      executionHistory.unshift(executionRecord);
+
+      // Keep only last 20 executions to prevent file from getting too large
+      const MAX_HISTORY = 20;
+      if (executionHistory.length > MAX_HISTORY) {
+        executionHistory.splice(MAX_HISTORY);
+      }
+
+      // Update profile with execution history
       await this.profileManager.updateProfile(task.profileId, {
         metadata: {
           ...profile.metadata,
-          lastLog: fullLog,
+          lastLog: fullLog, // Keep for backward compatibility
           lastExecution: {
             taskId: task.id,
             status: task.status,
-            timestamp: new Date(),
+            timestamp: executionRecord.timestamp,
             logs: task.logs
-          }
+          },
+          // NEW: Execution history array
+          executionHistory: executionHistory
         }
       });
 
-      logger.info(`Saved logs to profile ${task.profileId}`);
+      logger.info(`Saved execution history to profile ${task.profileId} (${executionHistory.length} records)`);
     } catch (error) {
       logger.error('Failed to save logs to profile:', error);
     }

@@ -11,7 +11,6 @@ import {
 import {
   Search,
   Plus,
-  Settings,
   PlayCircle,
   PauseCircle,
   Filter,
@@ -31,10 +30,13 @@ interface InstanceControlsProps {
   onNavigateToSettings?: () => void;
   isAutoRunEnabled: boolean;
   totalProfiles: number;
-  onRunAll?: () => void;
-  onStopAll?: () => void;
-  isRunningAll?: boolean;
-  isStoppingAll?: boolean;
+  deviceMonitorStats?: {
+    totalInstances: number;
+    runningInstances: number;
+    connectedInstances: number;
+    logcatProcesses: number;
+    uptime: number;
+  };
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
@@ -50,10 +52,7 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
   onNavigateToSettings,
   isAutoRunEnabled,
   totalProfiles,
-  onRunAll,
-  onStopAll,
-  isRunningAll = false,
-  isStoppingAll = false,
+  deviceMonitorStats,
   onRefresh,
   isRefreshing = false,
 }) => {
@@ -71,24 +70,6 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
           >
             <Plus className="h-4 w-4 mr-2" />
             {isCreating ? "Creating Instance..." : "New Instance"}
-          </Button>
-
-          <Button
-            onClick={onRunAll}
-            disabled={isRunningAll || totalProfiles === 0}
-            className="bg-blue-600 text-white hover:bg-blue-700"
-          >
-            <PlayCircle className="h-4 w-4 mr-2" />
-            {isRunningAll ? "Running All..." : "Run All"}
-          </Button>
-
-          <Button
-            onClick={onStopAll}
-            disabled={isStoppingAll || totalProfiles === 0}
-            className="bg-red-600 text-white hover:bg-red-700"
-          >
-            <PauseCircle className="h-4 w-4 mr-2" />
-            {isStoppingAll ? "Stopping All..." : "Stop All"}
           </Button>
 
           <Button
@@ -134,8 +115,23 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
               </TooltipProvider>
               Settings
             </Button>
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              {totalProfiles} instances
+            <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 rounded-full bg-gray-400" />
+                <span>{totalProfiles} total</span>
+              </div>
+              {deviceMonitorStats && (
+                <>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <span>{deviceMonitorStats.runningInstances} running</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                    <span>{deviceMonitorStats.connectedInstances} connected</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

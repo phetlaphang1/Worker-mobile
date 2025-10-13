@@ -133,6 +133,7 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
                 )}
               </button>
             </TableHead>
+            <TableHead className="w-[120px] text-gray-500 dark:text-gray-400 py-1">Task</TableHead>
             <TableHead className="w-[50px] py-1">Handle</TableHead>
           </TableRow>
         </TableHeader>
@@ -175,15 +176,15 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
               </TableCell>
               <TableCell className="text-right py-1">
                 <ExecutionActions
-                  isRunning={profile.status === 'active' || profile.status === 'running'}
+                  isRunning={(profile as any).deviceStatus?.isRunning || false}
                   onRun={() => onRunProfile(profile.id)}
                   onStop={() => onStopProfile(profile.id)}
                   onViewLog={() => onLogClick(profile)}
                   onViewOutput={() => onOutputClick(profile)}
                   showIndicator={true}
                   indicatorComponent={<ExecutionColumn profile={profile} />}
-                  runTooltip="Run instance"
-                  stopTooltip="Stop instance"
+                  runTooltip="Run instance and execute script"
+                  stopTooltip="Stop instance and terminate script"
                   logTooltip="View log file"
                   outputTooltip="Show output files"
                 />
@@ -202,16 +203,74 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
                 )}
               </TableCell>
 
-              {/* Status Column */}
+              {/* Status Column - Instance/LDPlayer Status Only */}
+              <TableCell className="text-sm text-left py-1">
+                <div className="flex items-center space-x-2">
+                  {/* Device Monitor Status Indicator */}
+                  {(profile as any).deviceStatus && (
+                    <div className="flex items-center space-x-1">
+                      {(profile as any).deviceStatus.isRunning && (profile as any).deviceStatus.isAdbConnected ? (
+                        <Badge variant="default" className="text-xs bg-green-500 text-white border-green-600 hover:bg-green-600 font-semibold">
+                          Running
+                        </Badge>
+                      ) : (profile as any).deviceStatus.isRunning ? (
+                        <Badge variant="default" className="text-xs bg-yellow-500 text-white border-yellow-600 hover:bg-yellow-600 font-semibold">
+                          Starting
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs bg-gray-400 text-white border-gray-500 hover:bg-gray-500 font-semibold">
+                          Stopped
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  {!((profile as any).deviceStatus) && (
+                    <Badge variant="secondary" className="text-xs bg-gray-400 text-white border-gray-500 hover:bg-gray-500 font-semibold">
+                      Unknown
+                    </Badge>
+                  )}
+                </div>
+              </TableCell>
+
+              {/* Task Column - Script Execution Status */}
               <TableCell className="text-sm text-left py-1">
                 {(() => {
-                  const mappedStatus = mapLegacyStatus(profile.status);
+                  const taskStatus = (profile as any).taskStatus;
+                  if (!taskStatus || taskStatus === 'idle') {
+                    return (
+                      <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600 border-gray-300">
+                        Idle
+                      </Badge>
+                    );
+                  }
+
+                  if (taskStatus === 'running') {
+                    return (
+                      <Badge variant="default" className="text-xs bg-purple-500 text-white border-purple-600 hover:bg-purple-600 font-semibold animate-pulse">
+                        Running
+                      </Badge>
+                    );
+                  }
+
+                  if (taskStatus === 'completed') {
+                    return (
+                      <Badge variant="default" className="text-xs bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600 font-semibold">
+                        Completed
+                      </Badge>
+                    );
+                  }
+
+                  if (taskStatus === 'failed') {
+                    return (
+                      <Badge variant="destructive" className="text-xs bg-red-500 text-white border-red-600 hover:bg-red-600 font-semibold">
+                        Failed
+                      </Badge>
+                    );
+                  }
+
                   return (
-                    <Badge
-                      variant={getStatusBadgeVariant(mappedStatus)}
-                      className={`text-xs ${getStatusBadgeClasses(mappedStatus)}`}
-                    >
-                      {mappedStatus}
+                    <Badge variant="outline" className="text-xs">
+                      {taskStatus}
                     </Badge>
                   );
                 })()}

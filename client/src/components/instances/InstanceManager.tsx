@@ -20,6 +20,13 @@ import { useInstanceMutations } from './instancesTab/useInstanceMutations';
 interface InstanceManagerProps {
   profiles: Profile[];
   isLoading: boolean;
+  deviceMonitorStats?: {
+    totalInstances: number;
+    runningInstances: number;
+    connectedInstances: number;
+    logcatProcesses: number;
+    uptime: number;
+  };
   onNavigateToTwitterCaring?: (profileId: number) => void;
   onNavigateToSettings?: () => void;
 }
@@ -27,6 +34,7 @@ interface InstanceManagerProps {
 export default function InstanceManager({
   profiles,
   isLoading,
+  deviceMonitorStats,
   onNavigateToTwitterCaring,
   onNavigateToSettings,
 }: InstanceManagerProps) {
@@ -90,9 +98,6 @@ export default function InstanceManager({
     refreshStatusMutation
   } = useInstanceMutations();
 
-  // Run All / Stop All state
-  const [isRunningAll, setIsRunningAll] = useState(false);
-  const [isStoppingAll, setIsStoppingAll] = useState(false);
 
   // Fetch settings and scheduled profiles
   useEffect(() => {
@@ -282,205 +287,6 @@ export default function InstanceManager({
     }
   };
 
-  const handleRunAll = async () => {
-    setIsRunningAll(true);
-    let launchSuccessCount = 0;
-    let launchFailCount = 0;
-    let scriptSuccessCount = 0;
-    let scriptFailCount = 0;
-
-    try {
-      // PHASE 1: Launch all instances using resource-managed batch processing
-      toast({
-        title: "Starting Instances",
-        description: "Launching instances with optimized resource allocation...",
-      });
-
-      // Separate profiles into already-active and need-to-launch
-      const activeProfiles = profiles.filter(p => p.status === 'active');
-      const inactiveProfiles = profiles.filter(p => p.status !== 'active');
-
-      console.log(`[RUN ALL] Active: ${activeProfiles.length}, Inactive: ${inactiveProfiles.length}`);
-
-      // Use server-side batch launch with resource management
-      if (inactiveProfiles.length > 0) {
-        const response = await fetch(`${API_BASE_URL}/api/profiles/batch-launch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            profileIds: inactiveProfiles.map(p => p.id)
-          })
-        });
-
-        const launchResults = await response.json();
-        console.log(`[RUN ALL] Batch launch results:`, launchResults);
-
-        // Count successes and failures
-        launchSuccessCount = launchResults.results?.filter((r: any) => r.success).length || 0;
-        launchFailCount = launchResults.results?.filter((r: any) => !r.success).length || 0;
-      }
-
-      // Count already-active profiles
-      launchSuccessCount += activeProfiles.length;
-
-      // Invalidate queries to refresh UI
-      await queryClient.invalidateQueries({ queryKey: ['profiles'] });
-
-      // Show launch results
-      toast({
-        title: "Instances Launched",
-        description: `${launchSuccessCount} instance${launchSuccessCount !== 1 ? 's' : ''} ready${launchFailCount > 0 ? `, ${launchFailCount} failed` : ''}`,
-      });
-
-      // Wait for instances to stabilize
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // PHASE 2: Execute scripts using resource-managed batch processing
-      // Fetch FRESH profile data to get updated statuses after launching
-      const freshProfilesResponse = await fetch(`${API_BASE_URL}/api/profiles`);
-      const freshProfiles: Profile[] = await freshProfilesResponse.json();
-
-      // Debug: Log all profile statuses
-      console.log(`[RUN ALL] Fresh profile statuses:`, freshProfiles.map(p => ({
-        id: p.id,
-        name: p.name,
-        status: p.status
-      })));
-
-      // Run scripts on ALL ACTIVE profiles (using fresh data)
-      const readyProfiles = freshProfiles.filter(p => p.status === 'active');
-
-      console.log(`[RUN ALL] Ready profiles for scripts: ${readyProfiles.length}`);
-
-      if (readyProfiles.length > 0) {
-        toast({
-          title: "Starting Scripts",
-          description: `Executing scripts with concurrency control...`,
-        });
-
-        // Use server-side batch script execution
-        const response = await fetch(`${API_BASE_URL}/api/profiles/batch-execute-scripts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            profileIds: readyProfiles.map(p => p.id)
-          })
-        });
-
-        const scriptResults = await response.json();
-        console.log(`[RUN ALL] Batch script results:`, scriptResults);
-
-        // Count successes and failures
-        scriptSuccessCount = scriptResults.results?.filter((r: any) => r.success).length || 0;
-        scriptFailCount = scriptResults.results?.filter((r: any) => !r.success).length || 0;
-
-        // Show final results
-        toast({
-          title: "Run All Complete",
-          description: `${launchSuccessCount} launched, ${scriptSuccessCount} scripts executed${scriptFailCount > 0 ? `, ${scriptFailCount} failed` : ''}`,
-        });
-      }
-    } catch (error) {
-      console.error('Run All error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to run all instances",
-        variant: "destructive",
-      });
-    } finally {
-      setIsRunningAll(false);
-      // Refresh profiles list
-      await queryClient.invalidateQueries({ queryKey: ['profiles'] });
-    }
-  };
-
-  const handleStopAll = async () => {
-    setIsStoppingAll(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    try {
-      // Step 1: Refresh status to get ACTUAL running instances from LDPlayer
-      toast({
-        title: "Checking Running Instances",
-        description: "Syncing with LDPlayer...",
-      });
-
-      await refreshStatusMutation.mutateAsync();
-
-      // Step 2: Fetch fresh profile data
-      const freshResponse = await fetch(`${API_BASE_URL}/api/profiles`);
-      const freshProfiles: Profile[] = await freshResponse.json();
-
-      // Step 3: Filter only ACTIVE/RUNNING profiles (actually running)
-      const activeProfiles = freshProfiles.filter(p => p.status === 'active' || p.status === 'running');
-
-      if (activeProfiles.length === 0) {
-        toast({
-          title: "No Active Instances",
-          description: "All instances are already stopped",
-        });
-        return;
-      }
-
-      console.log(`[STOP ALL] Stopping ${activeProfiles.length} active instance(s)...`);
-
-      // Stop sequentially with PROPER delay (2-3 seconds between each)
-      for (let i = 0; i < activeProfiles.length; i++) {
-        const profile = activeProfiles[i];
-
-        try {
-          console.log(`[STOP ALL] Stopping ${i + 1}/${activeProfiles.length}: ${profile.name} (ID: ${profile.id})`);
-
-          await stopProfileMutation.mutateAsync({ profileId: profile.id });
-          successCount++;
-
-          console.log(`[STOP ALL] ✅ Stopped ${profile.name}`);
-
-          // CRITICAL: Wait 2-3 seconds between stops to allow graceful shutdown
-          if (i < activeProfiles.length - 1) {
-            console.log(`[STOP ALL] Waiting 3 seconds before next stop...`);
-            await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ 3 seconds
-          }
-        } catch (error) {
-          console.error(`[STOP ALL] ❌ Failed to stop profile ${profile.id}:`, error);
-          failCount++;
-
-          // Continue with delay even on error to prevent race conditions
-          if (i < activeProfiles.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        }
-      }
-
-      // Refresh profiles list after all stops
-      await queryClient.invalidateQueries({ queryKey: ['profiles'] });
-
-      // Show results
-      if (successCount > 0) {
-        toast({
-          title: "Stop All Complete",
-          description: `Stopped ${successCount} instance${successCount !== 1 ? 's' : ''}${failCount > 0 ? `, ${failCount} failed` : ''}`,
-        });
-      } else {
-        toast({
-          title: "Stop All Failed",
-          description: "No instances were stopped successfully",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('[STOP ALL] Error:', error);
-      toast({
-        title: "Error",
-        description: "Failed to stop all instances",
-        variant: "destructive",
-      });
-    } finally {
-      setIsStoppingAll(false);
-    }
-  };
-
 
   // Filtering and sorting logic
   const filteredAndSortedProfiles = profiles
@@ -565,10 +371,7 @@ export default function InstanceManager({
         onNavigateToSettings={onNavigateToSettings}
         isAutoRunEnabled={isAutoRunEnabled}
         totalProfiles={profiles.length}
-        onRunAll={handleRunAll}
-        onStopAll={handleStopAll}
-        isRunningAll={isRunningAll}
-        isStoppingAll={isStoppingAll}
+        deviceMonitorStats={deviceMonitorStats}
         onRefresh={() => refreshStatusMutation.mutate()}
         isRefreshing={refreshStatusMutation.isPending}
       />
@@ -613,7 +416,7 @@ export default function InstanceManager({
             onDelete={handleDeleteClick}
             isTwitterCaring={isTwitterCaring}
             selectedScript={selectedScript}
-            isOpeningBrowser={false}
+            isOpeningBrowser={launchInstanceOnlyMutation.isPending}
             isDuplicating={duplicateProfileMutation.isPending}
           />
 

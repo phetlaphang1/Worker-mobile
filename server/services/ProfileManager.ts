@@ -205,7 +205,10 @@ export class ProfileManager {
         throw new Error(`Profile ${profileId} not found`);
       }
 
+      logger.info(`[ProfileManager] launchInstanceOnly called for Profile ID: ${profileId}, Instance: ${profile.instanceName}`);
+
       // Just launch the instance
+      logger.info(`[ProfileManager] Calling LDPlayerController.launchInstance("${profile.instanceName}")`);
       await this.controller.launchInstance(profile.instanceName);
 
       // Update profile status
@@ -213,9 +216,9 @@ export class ProfileManager {
       profile.lastUsed = new Date();
       await this.saveProfile(profile);
 
-      logger.info(`Launched instance only: ${profile.name}`);
+      logger.info(`[ProfileManager] Launched instance only: ${profile.name}`);
     } catch (error) {
-      logger.error(`Failed to launch instance ${profileId}:`, error);
+      logger.error(`[ProfileManager] Failed to launch instance ${profileId}:`, error);
       throw error;
     }
   }

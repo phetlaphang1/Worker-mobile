@@ -13,6 +13,7 @@ import { getAutoInstallApps } from '../config/apps.config.js';
 import DirectMobileScriptService from '../services/DirectMobileScriptService.js';
 
 import UIInspectorService from '../services/UIInspectorService.js';
+import DeviceMonitor from '../services/DeviceMonitor.js';
 
 interface RouteServices {
   ldPlayerController: LDPlayerController;
@@ -22,10 +23,11 @@ interface RouteServices {
   appiumScriptService?: AppiumScriptService;
   directScriptService?: DirectMobileScriptService;
   uiInspectorService?: UIInspectorService;
+  deviceMonitor?: DeviceMonitor;
 }
 
 export function setupRoutes(app: Express, services: RouteServices) {
-  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService } = services;
+  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService, deviceMonitor } = services;
 
   // Setup authentication routes first
   setupAuthRoutes(app);
@@ -660,10 +662,21 @@ export function setupRoutes(app: Express, services: RouteServices) {
   app.post('/api/profiles/:id/launch-only', async (req: Request, res: Response) => {
     try {
       const profileId = parseInt(req.params.id);
+      logger.info(`[LAUNCH-ONLY] Request received for profile ID: ${profileId}`);
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        logger.error(`[LAUNCH-ONLY] Profile ${profileId} not found`);
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      logger.info(`[LAUNCH-ONLY] Launching instance: ${profile.instanceName} (Profile: ${profile.name})`);
       await profileManager.launchInstanceOnly(profileId);
+
+      logger.info(`[LAUNCH-ONLY] Successfully launched instance: ${profile.instanceName}`);
       res.json({ success: true, message: 'Instance launched without scripts' });
     } catch (error) {
-      logger.error('Error launching instance:', error);
+      logger.error('[LAUNCH-ONLY] Error launching instance:', error);
       res.status(500).json({ error: 'Failed to launch instance' });
     }
   });
@@ -2013,6 +2026,174 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error getting resource status:', error);
       res.status(500).json({ error: 'Failed to get resource status' });
+    }
+  });
+
+  // ============================================
+  // Device Monitoring Routes
+  // ============================================
+
+  /**
+   * Get all device statuses
+   */
+  app.get('/api/monitor/devices', (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      const statuses = deviceMonitor.getDeviceStatuses();
+      const statistics = deviceMonitor.getStatistics();
+
+      res.json({
+        success: true,
+        devices: statuses,
+        statistics,
+        isMonitoring: deviceMonitor.isRunning()
+      });
+    } catch (error) {
+      logger.error('Error getting device statuses:', error);
+      res.status(500).json({ error: 'Failed to get device statuses' });
+    }
+  });
+
+  /**
+   * Get specific device status
+   */
+  app.get('/api/monitor/devices/:instanceName', (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const status = deviceMonitor.getDeviceStatus(instanceName);
+
+      if (!status) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      res.json({
+        success: true,
+        device: status
+      });
+    } catch (error) {
+      logger.error('Error getting device status:', error);
+      res.status(500).json({ error: 'Failed to get device status' });
+    }
+  });
+
+  /**
+   * Read logcat for a device
+   */
+  app.get('/api/monitor/devices/:instanceName/logcat', async (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const lines = parseInt(req.query.lines as string) || 100;
+
+      const logContent = await deviceMonitor.readLogcat(instanceName, lines);
+
+      res.json({
+        success: true,
+        instanceName,
+        content: logContent,
+        lines
+      });
+    } catch (error) {
+      logger.error('Error reading logcat:', error);
+      res.status(500).json({ error: 'Failed to read logcat' });
+    }
+  });
+
+  /**
+   * Clear logcat for a device
+   */
+  app.post('/api/monitor/devices/:instanceName/logcat/clear', async (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      await deviceMonitor.clearLogcat(instanceName);
+
+      res.json({
+        success: true,
+        message: `Logcat cleared for ${instanceName}`
+      });
+    } catch (error) {
+      logger.error('Error clearing logcat:', error);
+      res.status(500).json({ error: 'Failed to clear logcat' });
+    }
+  });
+
+  /**
+   * Get monitor statistics
+   */
+  app.get('/api/monitor/statistics', (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      const statistics = deviceMonitor.getStatistics();
+
+      res.json({
+        success: true,
+        statistics,
+        isMonitoring: deviceMonitor.isRunning()
+      });
+    } catch (error) {
+      logger.error('Error getting monitor statistics:', error);
+      res.status(500).json({ error: 'Failed to get monitor statistics' });
+    }
+  });
+
+  /**
+   * Start monitoring
+   */
+  app.post('/api/monitor/start', async (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      await deviceMonitor.start();
+
+      res.json({
+        success: true,
+        message: 'Device monitoring started',
+        isMonitoring: true
+      });
+    } catch (error) {
+      logger.error('Error starting monitor:', error);
+      res.status(500).json({ error: 'Failed to start monitor' });
+    }
+  });
+
+  /**
+   * Stop monitoring
+   */
+  app.post('/api/monitor/stop', async (req: Request, res: Response) => {
+    try {
+      if (!deviceMonitor) {
+        return res.status(500).json({ error: 'Device Monitor not initialized' });
+      }
+
+      await deviceMonitor.stop();
+
+      res.json({
+        success: true,
+        message: 'Device monitoring stopped',
+        isMonitoring: false
+      });
+    } catch (error) {
+      logger.error('Error stopping monitor:', error);
+      res.status(500).json({ error: 'Failed to stop monitor' });
     }
   });
 }

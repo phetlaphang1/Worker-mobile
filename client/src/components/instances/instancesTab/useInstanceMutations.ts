@@ -56,7 +56,10 @@ export const useInstanceMutations = () => {
         status: execution.status,
       });
 
+      // Invalidate all relevant queries to refresh UI
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/direct/tasks"] });
     },
     onError: (error: any, params) => {
       // Update status to inactive on error (instance failed to start)
@@ -162,7 +165,10 @@ export const useInstanceMutations = () => {
         description: `Instance execution stopped successfully`,
       });
 
+      // Invalidate all relevant queries to refresh UI
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/direct/tasks"] });
     },
     onError: (error: any, params) => {
       // Keep status as running if stop fails (profile is still active)
@@ -251,7 +257,9 @@ export const useInstanceMutations = () => {
       return { profileId: profile.id };
     },
     onSuccess: () => {
+      // Invalidate profiles and devices (but not tasks since no script is running)
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
       toast({
         title: "Instance Launched",
         description: "Instance launched successfully (without running script)",

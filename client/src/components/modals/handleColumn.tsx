@@ -64,12 +64,20 @@ export const HandleColumn: React.FC<HandleColumnProps> = ({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 disabled:text-gray-300 disabled:cursor-not-allowed"
-          onClick={onOpenBrowser}
+          className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 disabled:text-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isRunning && !isOpeningBrowser && !disableOpenBrowser) {
+              onOpenBrowser();
+            }
+          }}
           disabled={isRunning || isOpeningBrowser || disableOpenBrowser}
           title={
             isRunning
               ? "Instance is already running"
+              : isOpeningBrowser
+              ? "Launching instance..."
               : openBrowserTooltip || "Launch instance without running script"
           }
         >
