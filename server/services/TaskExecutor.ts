@@ -397,8 +397,8 @@ export class TaskExecutor {
     try {
       const response = await axios.get(`${this.config.taskCenterUrl}/api/tasks`, {
         headers: {
-          'Authorization': `Bearer ${this.config.taskCenterApiKey}`,
-          'User-Id': this.config.taskCenterUserId || ''
+          'api-key': this.config.taskCenterApiKey,
+          'user-id': this.config.taskCenterUserId || ''
         },
         params: {
           status: 'pending',
@@ -453,8 +453,8 @@ export class TaskExecutor {
         payload,
         {
           headers: {
-            'Authorization': `Bearer ${this.config.taskCenterApiKey}`,
-            'User-Id': this.config.taskCenterUserId || ''
+            'api-key': this.config.taskCenterApiKey,
+            'user-id': this.config.taskCenterUserId || ''
           }
         }
       );
