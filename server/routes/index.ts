@@ -15,6 +15,8 @@ import DirectMobileScriptService from '../services/DirectMobileScriptService.js'
 import UIInspectorService from '../services/UIInspectorService.js';
 import DeviceMonitor from '../services/DeviceMonitor.js';
 
+import FingerprintService from '../services/FingerprintService.js';
+
 interface RouteServices {
   ldPlayerController: LDPlayerController;
   profileManager: ProfileManager;
@@ -24,10 +26,11 @@ interface RouteServices {
   directScriptService?: DirectMobileScriptService;
   uiInspectorService?: UIInspectorService;
   deviceMonitor?: DeviceMonitor;
+  fingerprintService?: FingerprintService;
 }
 
 export function setupRoutes(app: Express, services: RouteServices) {
-  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService, deviceMonitor } = services;
+  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService, deviceMonitor, fingerprintService } = services;
 
   // Setup authentication routes first
   setupAuthRoutes(app);
@@ -95,7 +98,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles', async (req: Request, res: Response) => {
     try {
-      const { selectedApps, autoRunScripts, autoActivate = true, ...profileData } = req.body;
+      const { selectedApps, autoRunScripts, autoActivate = true, autoApplyFingerprint = true, fingerprintBrand, ...profileData } = req.body;
 
       // Validate required fields
       if (!profileData.name) {
@@ -115,6 +118,12 @@ export function setupRoutes(app: Express, services: RouteServices) {
         ...defaultSettings,
         ...(profileData.settings || {})
       };
+
+      // Add fingerprint options to profile data
+      profileData.autoApplyFingerprint = autoApplyFingerprint;
+      if (fingerprintBrand) {
+        profileData.fingerprintBrand = fingerprintBrand;
+      }
 
       // Create profile
       const profile = await profileManager.createProfile(profileData);
@@ -170,7 +179,10 @@ export function setupRoutes(app: Express, services: RouteServices) {
   app.put('/api/profiles/:profileId', async (req: Request, res: Response) => {
     try {
       const profileId = parseInt(req.params.profileId);
+      logger.info(`[UPDATE PROFILE] Request received for profile ${profileId}`);
+      logger.info(`[UPDATE PROFILE] Update data:`, JSON.stringify(req.body, null, 2));
       const profile = await profileManager.updateProfile(profileId, req.body);
+      logger.info(`[UPDATE PROFILE] Profile ${profileId} updated successfully`);
       res.json({ profile });
     } catch (error) {
       logger.error('Error updating profile:', error);
@@ -216,7 +228,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   app.post('/api/profiles/:profileId/clone', async (req: Request, res: Response) => {
     try {
       const profileId = parseInt(req.params.profileId);
-      const { newName, launchAndSetup } = req.body;
+      const { newName, launchAndSetup, autoApplyFingerprint = true, fingerprintBrand } = req.body;
 
       if (!newName) {
         return res.status(400).json({ error: 'newName is required' });
@@ -228,7 +240,11 @@ export function setupRoutes(app: Express, services: RouteServices) {
       const clonedProfile = await profileManager.cloneProfile(
         profileId,
         newName,
-        { launchAndSetup }
+        {
+          launchAndSetup,
+          autoApplyFingerprint,
+          fingerprintBrand
+        }
       );
 
       res.json({
@@ -2194,6 +2210,314 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error stopping monitor:', error);
       res.status(500).json({ error: 'Failed to stop monitor' });
+    }
+  });
+
+  // ============================================
+  // Fingerprint Randomization Routes (GemLogin-like)
+  // ============================================
+
+  /**
+   * Generate random fingerprint
+   */
+  app.post('/api/fingerprint/generate', async (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { brand, includePhoneNumber } = req.body;
+      const { FingerprintGenerator } = await import('../services/FingerprintGenerator.js');
+
+      const fingerprint = FingerprintGenerator.generateFingerprint({ brand, includePhoneNumber });
+
+      res.json({
+        success: true,
+        fingerprint
+      });
+    } catch (error) {
+      logger.error('Error generating fingerprint:', error);
+      res.status(500).json({ error: 'Failed to generate fingerprint' });
+    }
+  });
+
+  /**
+   * Apply fingerprint to instance
+   */
+  app.post('/api/fingerprint/apply/:instanceName', async (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const { fingerprint, method, requireRestart } = req.body;
+
+      const appliedFingerprint = await fingerprintService.applyFingerprint(
+        instanceName,
+        fingerprint,
+        { method, requireRestart }
+      );
+
+      res.json({
+        success: true,
+        instanceName,
+        fingerprint: appliedFingerprint,
+        message: 'Fingerprint applied successfully'
+      });
+    } catch (error) {
+      logger.error('Error applying fingerprint:', error);
+      res.status(500).json({ error: 'Failed to apply fingerprint' });
+    }
+  });
+
+  /**
+   * Apply fingerprint to multiple instances (batch)
+   */
+  app.post('/api/fingerprint/apply-batch', async (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceNames, useSameBrand, brand, method } = req.body;
+
+      if (!Array.isArray(instanceNames) || instanceNames.length === 0) {
+        return res.status(400).json({ error: 'instanceNames must be a non-empty array' });
+      }
+
+      const results = await fingerprintService.applyFingerprintBatch(
+        instanceNames,
+        { useSameBrand, brand, method }
+      );
+
+      const formattedResults = Array.from(results.entries()).map(([name, fp]) => ({
+        instanceName: name,
+        fingerprint: fp
+      }));
+
+      res.json({
+        success: true,
+        total: instanceNames.length,
+        successCount: formattedResults.length,
+        results: formattedResults
+      });
+    } catch (error) {
+      logger.error('Error applying fingerprints in batch:', error);
+      res.status(500).json({ error: 'Failed to apply fingerprints in batch' });
+    }
+  });
+
+  /**
+   * Get current fingerprint from instance
+   */
+  app.get('/api/fingerprint/:instanceName', async (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const fingerprint = await fingerprintService.getCurrentFingerprint(instanceName);
+
+      res.json({
+        success: true,
+        instanceName,
+        fingerprint
+      });
+    } catch (error) {
+      logger.error('Error getting fingerprint:', error);
+      res.status(500).json({ error: 'Failed to get fingerprint' });
+    }
+  });
+
+  /**
+   * Get cached fingerprint
+   */
+  app.get('/api/fingerprint/cache/:instanceName', (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const fingerprint = fingerprintService.getCachedFingerprint(instanceName);
+
+      if (!fingerprint) {
+        return res.status(404).json({ error: 'No cached fingerprint found for instance' });
+      }
+
+      res.json({
+        success: true,
+        instanceName,
+        fingerprint
+      });
+    } catch (error) {
+      logger.error('Error getting cached fingerprint:', error);
+      res.status(500).json({ error: 'Failed to get cached fingerprint' });
+    }
+  });
+
+  /**
+   * Verify fingerprint
+   */
+  app.post('/api/fingerprint/verify/:instanceName', async (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const { expectedFingerprint } = req.body;
+
+      if (!expectedFingerprint) {
+        return res.status(400).json({ error: 'expectedFingerprint is required' });
+      }
+
+      const isValid = await fingerprintService.verifyFingerprint(instanceName, expectedFingerprint);
+
+      res.json({
+        success: true,
+        instanceName,
+        isValid,
+        message: isValid ? 'Fingerprint verified' : 'Fingerprint mismatch'
+      });
+    } catch (error) {
+      logger.error('Error verifying fingerprint:', error);
+      res.status(500).json({ error: 'Failed to verify fingerprint' });
+    }
+  });
+
+  /**
+   * Export fingerprint to JSON
+   */
+  app.get('/api/fingerprint/export/:instanceName', (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const fingerprintJson = fingerprintService.exportFingerprint(instanceName);
+
+      res.header('Content-Type', 'application/json');
+      res.header('Content-Disposition', `attachment; filename="${instanceName}_fingerprint.json"`);
+      res.send(fingerprintJson);
+    } catch (error) {
+      logger.error('Error exporting fingerprint:', error);
+      res.status(500).json({ error: 'Failed to export fingerprint' });
+    }
+  });
+
+  /**
+   * Import fingerprint from JSON
+   */
+  app.post('/api/fingerprint/import/:instanceName', async (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      const { fingerprintJson } = req.body;
+
+      if (!fingerprintJson) {
+        return res.status(400).json({ error: 'fingerprintJson is required' });
+      }
+
+      await fingerprintService.importFingerprint(instanceName, fingerprintJson);
+
+      res.json({
+        success: true,
+        instanceName,
+        message: 'Fingerprint imported and applied successfully'
+      });
+    } catch (error) {
+      logger.error('Error importing fingerprint:', error);
+      res.status(500).json({ error: 'Failed to import fingerprint' });
+    }
+  });
+
+  /**
+   * Get available device brands
+   */
+  app.get('/api/fingerprint/brands', async (req: Request, res: Response) => {
+    try {
+      const { FingerprintGenerator } = await import('../services/FingerprintGenerator.js');
+      const brands = FingerprintGenerator.getAvailableBrands();
+
+      res.json({
+        success: true,
+        brands,
+        count: brands.length
+      });
+    } catch (error) {
+      logger.error('Error getting available brands:', error);
+      res.status(500).json({ error: 'Failed to get available brands' });
+    }
+  });
+
+  /**
+   * Get all device templates
+   */
+  app.get('/api/fingerprint/templates', async (req: Request, res: Response) => {
+    try {
+      const { FingerprintGenerator } = await import('../services/FingerprintGenerator.js');
+      const templates = FingerprintGenerator.getAllDeviceTemplates();
+
+      res.json({
+        success: true,
+        templates,
+        count: templates.length
+      });
+    } catch (error) {
+      logger.error('Error getting device templates:', error);
+      res.status(500).json({ error: 'Failed to get device templates' });
+    }
+  });
+
+  /**
+   * Get fingerprint service statistics
+   */
+  app.get('/api/fingerprint/stats', (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const stats = fingerprintService.getStats();
+
+      res.json({
+        success: true,
+        stats
+      });
+    } catch (error) {
+      logger.error('Error getting fingerprint stats:', error);
+      res.status(500).json({ error: 'Failed to get fingerprint stats' });
+    }
+  });
+
+  /**
+   * Clear fingerprint cache
+   */
+  app.delete('/api/fingerprint/cache/:instanceName?', (req: Request, res: Response) => {
+    try {
+      if (!fingerprintService) {
+        return res.status(500).json({ error: 'Fingerprint Service not initialized' });
+      }
+
+      const { instanceName } = req.params;
+      fingerprintService.clearCache(instanceName);
+
+      res.json({
+        success: true,
+        message: instanceName
+          ? `Cache cleared for ${instanceName}`
+          : 'All fingerprint cache cleared'
+      });
+    } catch (error) {
+      logger.error('Error clearing fingerprint cache:', error);
+      res.status(500).json({ error: 'Failed to clear fingerprint cache' });
     }
   });
 }

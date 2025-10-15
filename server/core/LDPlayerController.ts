@@ -209,7 +209,7 @@ export class LDPlayerController {
    * 5. Re-enable ADB if needed
    */
   async launchInstance(name: string, options?: { retryCount?: number; verifyHealth?: boolean; timeout?: number }): Promise<void> {
-    const { retryCount = 3, verifyHealth = true, timeout = 90000 } = options || {};
+    const { retryCount = 3, verifyHealth = true, timeout = 120000 } = options || {};
 
     let lastError: any;
 

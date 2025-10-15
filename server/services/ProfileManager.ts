@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { APPS_CONFIG, getAutoInstallApps } from '../config/apps.config.js';
+import type FingerprintService from './FingerprintService.js';
 
 export interface MobileProfile {
   id: number;
@@ -56,6 +57,7 @@ export class ProfileManager {
   private nextProfileId: number = 1;
   private profilesPath: string;
   private scriptExecutor: any; // Will be injected later
+  private fingerprintService?: FingerprintService; // Will be injected later
 
   constructor(controller: LDPlayerController) {
     this.controller = controller;
@@ -66,6 +68,11 @@ export class ProfileManager {
   // Inject script executor (to avoid circular dependency)
   setScriptExecutor(scriptExecutor: any): void {
     this.scriptExecutor = scriptExecutor;
+  }
+
+  // Inject fingerprint service (to avoid circular dependency)
+  setFingerprintService(fingerprintService: FingerprintService): void {
+    this.fingerprintService = fingerprintService;
   }
 
   // Public async initialization method - must be called before using ProfileManager
@@ -141,6 +148,8 @@ export class ProfileManager {
     device?: Partial<MobileProfile['device']>;
     network?: Partial<MobileProfile['network']>;
     location?: MobileProfile['location'];
+    autoApplyFingerprint?: boolean; // Auto-apply random fingerprint (default: true)
+    fingerprintBrand?: string; // Optional: specify brand for fingerprint
   }): Promise<MobileProfile> {
     try {
       const profileId = this.generateProfileId();
@@ -183,6 +192,43 @@ export class ProfileManager {
         cpu: profile.settings.cpu,
         memory: profile.settings.memory
       });
+
+      // Auto-apply fingerprint if enabled (default: true)
+      const shouldApplyFingerprint = config.autoApplyFingerprint !== false;
+      if (shouldApplyFingerprint && this.fingerprintService) {
+        try {
+          logger.info(`Auto-applying fingerprint to ${instanceName}...`);
+          const { FingerprintGenerator } = await import('./FingerprintGenerator.js');
+
+          // Generate fingerprint with optional brand
+          const fingerprint = FingerprintGenerator.generateFingerprint({
+            brand: config.fingerprintBrand,
+            includePhoneNumber: true
+          });
+
+          // Apply via ldconsole (instance is stopped, perfect timing!)
+          await this.fingerprintService.applyFingerprint(instanceName, fingerprint, {
+            method: 'ldconsole',
+            requireRestart: false
+          });
+
+          // Update profile device info with applied fingerprint
+          profile.device = {
+            imei: fingerprint.imei,
+            androidId: fingerprint.androidId,
+            model: fingerprint.model,
+            manufacturer: fingerprint.manufacturer,
+            brand: fingerprint.brand
+          };
+
+          logger.info(`✅ Fingerprint applied: ${fingerprint.brand} ${fingerprint.model} (IMEI: ${fingerprint.imei})`);
+        } catch (fingerprintError) {
+          logger.warn(`Failed to auto-apply fingerprint (continuing anyway):`, fingerprintError);
+          // Don't throw - profile creation should still succeed
+        }
+      } else if (shouldApplyFingerprint && !this.fingerprintService) {
+        logger.warn('FingerprintService not available, skipping auto-apply fingerprint');
+      }
 
       // Save profile
       this.profiles.set(profileId, profile);
@@ -498,6 +544,8 @@ export class ProfileManager {
   // Note: LDPlayer's copy command always clones everything - we cannot selectively exclude apps
   async cloneProfile(profileId: number, newName: string, options?: {
     launchAndSetup?: boolean;
+    autoApplyFingerprint?: boolean; // Auto-apply new fingerprint to clone (default: true)
+    fingerprintBrand?: string; // Optional: specify brand for fingerprint
   }): Promise<MobileProfile> {
     const originalProfile = this.profiles.get(profileId);
     if (!originalProfile) {
@@ -553,6 +601,43 @@ export class ProfileManager {
     } catch (cloneError) {
       logger.error(`Failed to clone instance: ${cloneError}`);
       throw new Error(`Failed to clone instance ${originalProfile.name}: ${cloneError instanceof Error ? cloneError.message : String(cloneError)}`);
+    }
+
+    // Auto-apply new fingerprint to cloned instance (default: true)
+    const shouldApplyFingerprint = options?.autoApplyFingerprint !== false;
+    if (shouldApplyFingerprint && this.fingerprintService) {
+      try {
+        logger.info(`Auto-applying new fingerprint to cloned instance ${newInstanceName}...`);
+        const { FingerprintGenerator } = await import('./FingerprintGenerator.js');
+
+        // Generate new fingerprint with optional brand
+        const fingerprint = FingerprintGenerator.generateFingerprint({
+          brand: options?.fingerprintBrand,
+          includePhoneNumber: true
+        });
+
+        // Apply via ldconsole (instance is stopped after clone)
+        await this.fingerprintService.applyFingerprint(newInstanceName, fingerprint, {
+          method: 'ldconsole',
+          requireRestart: false
+        });
+
+        // Update cloned profile device info
+        clonedProfile.device = {
+          imei: fingerprint.imei,
+          androidId: fingerprint.androidId,
+          model: fingerprint.model,
+          manufacturer: fingerprint.manufacturer,
+          brand: fingerprint.brand
+        };
+
+        logger.info(`✅ New fingerprint applied to clone: ${fingerprint.brand} ${fingerprint.model} (IMEI: ${fingerprint.imei})`);
+      } catch (fingerprintError) {
+        logger.warn(`Failed to auto-apply fingerprint to clone (continuing anyway):`, fingerprintError);
+        // Don't throw - clone should still succeed
+      }
+    } else if (shouldApplyFingerprint && !this.fingerprintService) {
+      logger.warn('FingerprintService not available, skipping auto-apply fingerprint for clone');
     }
 
     // Save profile

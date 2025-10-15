@@ -17,6 +17,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/libs/queryClient";
 import { useTheme } from "@/contexts/ThemeContext";
 import ProfileDetailsTabs from "./profileDetailsTabs";
+import { getApiUrl } from "@/config/api";
 
 interface ProfileDetailsModalProps {
   profileData: any;
@@ -207,7 +208,7 @@ export default function ProfileDetailsModal({
   useEffect(() => {
     const fetchTaskStatus = async () => {
       try {
-        const response = await apiRequest('GET', `http://localhost:5051/api/tasks?profileId=${profileData?.id}`);
+        const response = await apiRequest('GET', getApiUrl(`/api/tasks?profileId=${profileData?.id}`));
         const tasks: Task[] = await response.json();
         
         if (tasks && tasks.length > 0) {
@@ -272,7 +273,7 @@ export default function ProfileDetailsModal({
     mutationFn: async (updatedData: any) => {
       return apiRequest(
         "PUT",
-        `http://localhost:5051/api/profiles/${profileData.id}`,
+        getApiUrl(`/api/profiles/${profileData.id}`),
         updatedData,
       );
     },
@@ -281,7 +282,7 @@ export default function ProfileDetailsModal({
         title: "Profile Updated",
         description: "Profile details have been updated successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: [getApiUrl("/api/profiles")] });
       onClose();
     },
     onError: (error: any) => {

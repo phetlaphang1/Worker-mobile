@@ -233,6 +233,45 @@ export default function ProfileDetailsTabs({
             />
           </div>
 
+          {/* Device Fingerprint Info */}
+          {profileData.device && Object.keys(profileData.device).length > 0 && (
+            <div className="pt-4 border-t">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Device Fingerprint (Anti-Detect)</h3>
+              <div className="grid grid-cols-2 gap-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                {profileData.device.imei && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">IMEI</label>
+                    <p className="text-sm font-mono text-gray-900 dark:text-gray-100">{profileData.device.imei}</p>
+                  </div>
+                )}
+                {profileData.device.androidId && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Android ID</label>
+                    <p className="text-sm font-mono text-gray-900 dark:text-gray-100">{profileData.device.androidId}</p>
+                  </div>
+                )}
+                {profileData.device.brand && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Brand</label>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{profileData.device.brand}</p>
+                  </div>
+                )}
+                {profileData.device.manufacturer && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Manufacturer</label>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{profileData.device.manufacturer}</p>
+                  </div>
+                )}
+                {profileData.device.model && (
+                  <div className="col-span-2">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Device Model</label>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{profileData.device.model}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Instance Hardware Settings */}
           <div className="pt-4 border-t">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Instance Hardware Settings</h3>

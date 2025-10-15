@@ -12,6 +12,7 @@ import AppiumScriptService from './services/AppiumScriptService.js';
 import DirectMobileScriptService from './services/DirectMobileScriptService.js';
 import UIInspectorService from './services/UIInspectorService.js';
 import DeviceMonitor from './services/DeviceMonitor.js';
+import FingerprintService from './services/FingerprintService.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
@@ -65,6 +66,9 @@ const deviceMonitor = new DeviceMonitor(ldPlayerController, {
   enableHealthCheck: true
 });
 
+// Fingerprint Service - Device fingerprint randomization (GemLogin-like)
+const fingerprintService = new FingerprintService(ldPlayerController);
+
 // TaskExecutor can use either service
 // For simplicity, we default to DirectScriptService (no Appium server needed)
 const taskExecutor = new TaskExecutor(ldPlayerController, profileManager, {
@@ -79,6 +83,9 @@ const scriptExecutor = new MobileScriptExecutor(ldPlayerController, profileManag
 
 // Inject scriptExecutor into profileManager (to avoid circular dependency)
 profileManager.setScriptExecutor(scriptExecutor);
+
+// Inject fingerprintService into profileManager (for auto-apply on create/clone)
+profileManager.setFingerprintService(fingerprintService);
 
 // Broadcast log function will be defined after clientSubscriptions
 // We'll set it up after the WebSocket server is configured
@@ -215,7 +222,8 @@ setupRoutes(app, {
   appiumScriptService, // For advanced users who want Appium
   directScriptService, // For most users - simple ADB automation
   uiInspectorService, // Auto XPath generation
-  deviceMonitor // Real-time monitoring and logcat
+  deviceMonitor, // Real-time monitoring and logcat
+  fingerprintService // Device fingerprint randomization (GemLogin-like)
 });
 
 // Serve React app for all non-API routes
