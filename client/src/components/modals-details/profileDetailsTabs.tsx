@@ -49,6 +49,9 @@ export default function ProfileDetailsTabs({
   const [availableApps, setAvailableApps] = useState<any[]>([]);
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const [installingApp, setInstallingApp] = useState<string | null>(null);
+  const [availableProxies, setAvailableProxies] = useState<any[]>([]);
+  const [assignedProxy, setAssignedProxy] = useState<any>(null);
+  const [proxyMode, setProxyMode] = useState<'manual' | 'pool'>('manual');
 
   // Fetch available apps
   useEffect(() => {
@@ -57,6 +60,36 @@ export default function ProfileDetailsTabs({
       .then(data => setAvailableApps(data))
       .catch(err => console.error('Failed to fetch apps:', err));
   }, []);
+
+  // Fetch available proxies from pool
+  useEffect(() => {
+    fetch('http://localhost:5051/api/proxies')
+      .then(res => res.json())
+      .then(data => setAvailableProxies(data.proxies || []))
+      .catch(err => console.error('Failed to fetch proxies:', err));
+  }, []);
+
+  // Fetch assigned proxy for this instance
+  useEffect(() => {
+    if (profileData?.instanceName) {
+      fetch(`http://localhost:5051/api/proxies/assignment/${profileData.instanceName}`)
+        .then(res => {
+          if (res.ok) return res.json();
+          return null;
+        })
+        .then(data => {
+          if (data) {
+            setAssignedProxy(data.proxy);
+            // Auto-fill form if proxy is assigned
+            handleInputChange('useProxy', true);
+            handleInputChange('proxyType', data.proxy.type);
+            handleInputChange('proxyHost', data.proxy.host);
+            handleInputChange('proxyPort', data.proxy.port);
+          }
+        })
+        .catch(err => console.log('No proxy assigned yet'));
+    }
+  }, [profileData?.instanceName]);
 
   const installAppMutation = useMutation({
     mutationFn: async (apkFileName: string) => {
@@ -144,6 +177,95 @@ export default function ProfileDetailsTabs({
         variant: "destructive",
       });
     }
+  };
+
+  // Auto-assign proxy from pool
+  const autoAssignProxyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`http://localhost:5051/api/proxies/assign/${profileData.instanceName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sticky: true })
+      });
+      if (!response.ok) throw new Error('Failed to assign proxy');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAssignedProxy(data.proxy);
+      handleInputChange('useProxy', true);
+      handleInputChange('proxyType', data.proxy.type);
+      handleInputChange('proxyHost', data.proxy.host);
+      handleInputChange('proxyPort', data.proxy.port);
+      toast({
+        title: "Proxy Assigned",
+        description: `Assigned ${data.proxy.type}://${data.proxy.host}:${data.proxy.port}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Assignment Failed",
+        description: error.message || "Failed to assign proxy",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Rotate proxy (change to new one)
+  const rotateProxyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`http://localhost:5051/api/proxies/rotate/${profileData.instanceName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) throw new Error('Failed to rotate proxy');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAssignedProxy(data.newProxy);
+      handleInputChange('proxyType', data.newProxy.type);
+      handleInputChange('proxyHost', data.newProxy.host);
+      handleInputChange('proxyPort', data.newProxy.port);
+      toast({
+        title: "Proxy Rotated",
+        description: `New proxy: ${data.newProxy.type}://${data.newProxy.host}:${data.newProxy.port}`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Rotation Failed",
+        description: error.message || "Failed to rotate proxy",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Select proxy from pool
+  const selectProxyFromPool = (proxy: any, index: number) => {
+    // Assign specific proxy by index
+    fetch(`http://localhost:5051/api/proxies/assign/${profileData.instanceName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sticky: true, proxyIndex: index })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setAssignedProxy(data.proxy);
+        handleInputChange('useProxy', true);
+        handleInputChange('proxyType', data.proxy.type);
+        handleInputChange('proxyHost', data.proxy.host);
+        handleInputChange('proxyPort', data.proxy.port);
+        toast({
+          title: "Proxy Selected",
+          description: `Using ${data.proxy.type}://${data.proxy.host}:${data.proxy.port}`,
+        });
+      })
+      .catch(err => {
+        toast({
+          title: "Selection Failed",
+          description: "Failed to select proxy",
+          variant: "destructive",
+        });
+      });
   };
 
   return (
@@ -415,6 +537,7 @@ export default function ProfileDetailsTabs({
         {/* Proxy Tab */}
         <TabsContent value="proxy" className="space-y-3 w-full min-w-0">
           <div className="space-y-4">
+            {/* Enable Proxy Switch */}
             <div className="flex items-center space-x-2">
               <Switch
                 id="use-proxy"
@@ -428,113 +551,229 @@ export default function ProfileDetailsTabs({
 
             {formData.useProxy && (
               <>
-                <div>
-                  <Label htmlFor="proxy-type">Proxy Type</Label>
-                  <Select
-                    value={formData.proxyType}
-                    onValueChange={(value) =>
-                      handleInputChange("proxyType", value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select proxy type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="http">HTTP</SelectItem>
-                      <SelectItem value="https">HTTPS</SelectItem>
-                      <SelectItem value="socks4">SOCKS4</SelectItem>
-                      <SelectItem value="socks5">SOCKS5</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="proxy-host">Proxy Host</Label>
-                    <Input
-                      id="proxy-host"
-                      value={formData.proxyHost}
-                      onChange={(e) =>
-                        handleInputChange("proxyHost", e.target.value)
-                      }
-                      placeholder="127.0.0.1 or proxy.example.com"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="proxy-port">Proxy Port</Label>
-                    <Input
-                      id="proxy-port"
-                      type="number"
-                      value={formData.proxyPort}
-                      onChange={(e) =>
-                        handleInputChange("proxyPort", e.target.value)
-                      }
-                      placeholder="8080"
-                      min="1"
-                      max="65535"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="proxy-username">
-                      Username (Optional)
-                    </Label>
-                    <Input
-                      id="proxy-username"
-                      value={formData.proxyUsername}
-                      onChange={(e) =>
-                        handleInputChange(
-                          "proxyUsername",
-                          e.target.value,
-                        )
-                      }
-                      placeholder="Leave empty if no auth required"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="proxy-password">
-                      Password (Optional)
-                    </Label>
-                    <div className="flex items-center space-x-2">
-                      <Input
-                        id="proxy-password"
-                        type="password"
-                        value={formData.proxyPassword}
-                        onChange={(e) =>
-                          handleInputChange(
-                            "proxyPassword",
-                            e.target.value,
-                          )
-                        }
-                        placeholder="Leave empty if no auth required"
-                        className="flex-1"
-                      />
-                      {formData.proxyPassword && (
+                {/* 2. Assigned Proxy Info Banner */}
+                {assignedProxy && (
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 mb-1">
+                          Currently Assigned Proxy
+                        </h4>
+                        <p className="text-xs font-mono text-emerald-700 dark:text-emerald-300">
+                          {assignedProxy.type}://{assignedProxy.host}:{assignedProxy.port}
+                        </p>
+                      </div>
+                      {/* 3. Quick Actions */}
+                      <div className="flex gap-2">
                         <Button
-                          variant="outline"
                           size="sm"
-                          onClick={handleCopyPassword}
-                          className="h-9 w-9 p-0"
-                          title="Copy password to clipboard"
+                          variant="outline"
+                          onClick={() => rotateProxyMutation.mutate()}
+                          disabled={rotateProxyMutation.isPending}
+                          className="text-xs"
                         >
-                          <Copy className="h-4 w-4" />
+                          {rotateProxyMutation.isPending ? "Rotating..." : "Rotate"}
                         </Button>
-                      )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                <div className="flex justify-end pt-4">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => testProxyMutation.mutate()}
-                    disabled={testProxyMutation.isPending}
-                  >
-                    {testProxyMutation.isPending ? "Testing..." : "Test Proxy"}
-                  </Button>
-                </div>
+                {/* 3. Quick Actions - Auto-Assign (shown when no proxy assigned) */}
+                {!assignedProxy && availableProxies.length > 0 && (
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      onClick={() => autoAssignProxyMutation.mutate()}
+                      disabled={autoAssignProxyMutation.isPending}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {autoAssignProxyMutation.isPending ? "Assigning..." : "Auto-Assign from Pool"}
+                    </Button>
+                  </div>
+                )}
+
+                {/* 1. Mode Switcher: Manual vs Pool */}
+                <Tabs value={proxyMode} onValueChange={(value: any) => setProxyMode(value)} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="manual">Manual Input</TabsTrigger>
+                    <TabsTrigger value="pool">Select from Pool ({availableProxies.length})</TabsTrigger>
+                  </TabsList>
+
+                  {/* 5. Manual Input Form */}
+                  <TabsContent value="manual" className="space-y-4 mt-4">
+                    <div>
+                      <Label htmlFor="proxy-type">Proxy Type</Label>
+                      <Select
+                        value={formData.proxyType}
+                        onValueChange={(value) =>
+                          handleInputChange("proxyType", value)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select proxy type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="http">HTTP</SelectItem>
+                          <SelectItem value="https">HTTPS</SelectItem>
+                          <SelectItem value="socks4">SOCKS4</SelectItem>
+                          <SelectItem value="socks5">SOCKS5</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="proxy-host">Proxy Host</Label>
+                        <Input
+                          id="proxy-host"
+                          value={formData.proxyHost}
+                          onChange={(e) =>
+                            handleInputChange("proxyHost", e.target.value)
+                          }
+                          placeholder="127.0.0.1 or proxy.example.com"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="proxy-port">Proxy Port</Label>
+                        <Input
+                          id="proxy-port"
+                          type="number"
+                          value={formData.proxyPort}
+                          onChange={(e) =>
+                            handleInputChange("proxyPort", e.target.value)
+                          }
+                          placeholder="8080"
+                          min="1"
+                          max="65535"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="proxy-username">
+                          Username (Optional)
+                        </Label>
+                        <Input
+                          id="proxy-username"
+                          value={formData.proxyUsername}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "proxyUsername",
+                              e.target.value,
+                            )
+                          }
+                          placeholder="Leave empty if no auth required"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="proxy-password">
+                          Password (Optional)
+                        </Label>
+                        <div className="flex items-center space-x-2">
+                          <Input
+                            id="proxy-password"
+                            type="password"
+                            value={formData.proxyPassword}
+                            onChange={(e) =>
+                              handleInputChange(
+                                "proxyPassword",
+                                e.target.value,
+                              )
+                            }
+                            placeholder="Leave empty if no auth required"
+                            className="flex-1"
+                          />
+                          {formData.proxyPassword && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleCopyPassword}
+                              className="h-9 w-9 p-0"
+                              title="Copy password to clipboard"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => testProxyMutation.mutate()}
+                        disabled={testProxyMutation.isPending}
+                      >
+                        {testProxyMutation.isPending ? "Testing..." : "Test Proxy"}
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  {/* 4. Proxy Pool List */}
+                  <TabsContent value="pool" className="mt-4">
+                    {availableProxies.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <Shield className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">No proxies in pool</p>
+                        <p className="text-xs mt-1">Add proxies via API or load from file</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {availableProxies.map((proxy, index) => {
+                          const isAssigned = assignedProxy &&
+                            assignedProxy.host === proxy.host &&
+                            assignedProxy.port === proxy.port;
+
+                          return (
+                            <div
+                              key={index}
+                              className={`flex items-center justify-between p-3 border rounded-lg ${
+                                isAssigned
+                                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-700'
+                                  : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                              }`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                    proxy.type === 'http' ? 'bg-blue-100 text-blue-700' :
+                                    proxy.type === 'https' ? 'bg-green-100 text-green-700' :
+                                    proxy.type === 'socks5' ? 'bg-purple-100 text-purple-700' :
+                                    'bg-gray-100 text-gray-700'
+                                  }`}>
+                                    {proxy.type.toUpperCase()}
+                                  </span>
+                                  <span className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                                    {proxy.host}:{proxy.port}
+                                  </span>
+                                  {proxy.username && (
+                                    <span className="text-xs text-gray-500">(auth)</span>
+                                  )}
+                                </div>
+                              </div>
+                              {isAssigned ? (
+                                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                                  Currently Using
+                                </span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => selectProxyFromPool(proxy, index)}
+                                  className="text-xs"
+                                >
+                                  Select
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </>
             )}
           </div>

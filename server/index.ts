@@ -15,6 +15,7 @@ import DeviceMonitor from './services/DeviceMonitor.js';
 import FingerprintService from './services/FingerprintService.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
+import { initializeProxyManager } from './routes/proxy.js';
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -265,6 +266,22 @@ async function startServices() {
     // Start device monitor
     await deviceMonitor.start();
     logger.info('Device monitor started');
+
+    // Initialize proxy manager
+    const proxyManager = initializeProxyManager({
+      proxies: [],
+      rotationStrategy: 'least-used',
+      maxUsagePerProxy: 100
+    });
+    logger.info('Proxy manager initialized');
+
+    // Try to load proxies from file (optional)
+    try {
+      const count = await proxyManager.loadProxiesFromFile();
+      logger.info(`Loaded ${count} proxies from file`);
+    } catch (error) {
+      logger.info('No proxies file found, starting with empty pool');
+    }
 
     // Server port
     const port = process.env.PORT || 5051;

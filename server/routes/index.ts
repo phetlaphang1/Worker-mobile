@@ -16,6 +16,7 @@ import UIInspectorService from '../services/UIInspectorService.js';
 import DeviceMonitor from '../services/DeviceMonitor.js';
 
 import FingerprintService from '../services/FingerprintService.js';
+import proxyRouter from './proxy.js';
 
 interface RouteServices {
   ldPlayerController: LDPlayerController;
@@ -34,6 +35,9 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   // Setup authentication routes first
   setupAuthRoutes(app);
+
+  // Setup proxy management routes
+  app.use(proxyRouter);
 
   // Health check
   app.get('/health', (req: Request, res: Response) => {
