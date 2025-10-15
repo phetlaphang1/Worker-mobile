@@ -36,8 +36,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Serve static files from public directory (for React build)
 const publicPath = path.join(__dirname, '..', 'public');
@@ -121,7 +121,8 @@ directScriptService.setBroadcastStatus(broadcast); // For profile status updates
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
-  logger.info('New WebSocket connection established');
+  // Suppress noisy connection logs
+  // logger.info('New WebSocket connection established');
 
   ws.on('message', async (message) => {
     try {
@@ -132,7 +133,8 @@ wss.on('connection', (ws) => {
         case 'profile':
           // Client subscribing to logs for a specific task or profile
           clientSubscriptions.set(ws, { type: data.type, id: data.id });
-          logger.info(`Client subscribed to ${data.type} logs for ID: ${data.id}`);
+          // Suppress subscription logs
+          // logger.info(`Client subscribed to ${data.type} logs for ID: ${data.id}`);
           ws.send(JSON.stringify({
             type: 'subscribed',
             message: `Subscribed to ${data.type} ${data.id} logs`
@@ -195,7 +197,8 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     clientSubscriptions.delete(ws);
-    logger.info('WebSocket connection closed and subscription removed');
+    // Suppress close logs
+    // logger.info('WebSocket connection closed and subscription removed');
   });
 
   ws.on('error', (error) => {
@@ -253,19 +256,19 @@ async function startServices() {
   try {
     // Load all instances from LDPlayer FIRST (critical!)
     await ldPlayerController.getAllInstancesFromLDConsole();
-    logger.info('LDPlayer instances loaded');
+    // logger.info('LDPlayer instances loaded');
 
     // Initialize profile manager first
     await profileManager.initialize();
-    logger.info('Profile manager initialized');
+    // logger.info('Profile manager initialized');
 
     // Start task executor
     await taskExecutor.start();
-    logger.info('Task executor started');
+    // logger.info('Task executor started');
 
     // Start device monitor
     await deviceMonitor.start();
-    logger.info('Device monitor started');
+    // logger.info('Device monitor started');
 
     // Initialize proxy manager
     const proxyManager = initializeProxyManager({
@@ -273,14 +276,14 @@ async function startServices() {
       rotationStrategy: 'least-used',
       maxUsagePerProxy: 100
     });
-    logger.info('Proxy manager initialized');
+    // logger.info('Proxy manager initialized');
 
     // Try to load proxies from file (optional)
     try {
       const count = await proxyManager.loadProxiesFromFile();
-      logger.info(`Loaded ${count} proxies from file`);
+      // logger.info(`Loaded ${count} proxies from file`);
     } catch (error) {
-      logger.info('No proxies file found, starting with empty pool');
+      // logger.info('No proxies file found, starting with empty pool');
     }
 
     // Server port
@@ -288,18 +291,20 @@ async function startServices() {
 
     // Start server
     server.listen(port, () => {
-      logger.info(`Mobile Worker server running on port ${port}`);
-      logger.info(`WebSocket server ready on ws://localhost:${port}`);
+      // Suppress startup logs - only show if error occurs
+      // logger.info(`Mobile Worker server running on port ${port}`);
+      // logger.info(`WebSocket server ready on ws://localhost:${port}`);
 
-      console.log(`
-╔════════════════════════════════════════════╗
-║       Mobile Worker System Started          ║
-╠════════════════════════════════════════════╣
-║  API Server: http://localhost:${port}         ║
-║  WebSocket:  ws://localhost:${port}           ║
-║  Environment: ${process.env.NODE_ENV || 'development'}                  ║
-╚════════════════════════════════════════════╝
-      `);
+      // Suppress banner - too noisy for production
+      // console.log(`
+      // ╔════════════════════════════════════════════╗
+      // ║       Mobile Worker System Started          ║
+      // ╠════════════════════════════════════════════╣
+      // ║  API Server: http://localhost:${port}         ║
+      // ║  WebSocket:  ws://localhost:${port}           ║
+      // ║  Environment: ${process.env.NODE_ENV || 'development'}                  ║
+      // ╚════════════════════════════════════════════╝
+      // `);
     });
 
   } catch (error) {
@@ -314,24 +319,24 @@ async function gracefulShutdown(signal: string) {
 
   try {
     // Step 1: Stop device monitor
-    logger.info('Stopping device monitor...');
+    // logger.info('Stopping device monitor...');
     await deviceMonitor.stop();
 
     // Step 2: Stop task executor (no new tasks)
-    logger.info('Stopping task executor...');
+    // logger.info('Stopping task executor...');
     await taskExecutor.stop();
 
     // Step 3: Deactivate all profiles (stops scripts)
-    logger.info('Deactivating all profiles...');
+    // logger.info('Deactivating all profiles...');
     await profileManager.deactivateAllProfiles();
 
     // Step 4: Stop all LDPlayer instances properly
-    logger.info('Stopping all LDPlayer instances...');
+    // logger.info('Stopping all LDPlayer instances...');
     const stopResult = await ldPlayerController.stopAllInstances({
       onlyRunning: true,
       delay: 2000
     });
-    logger.info(`Stopped ${stopResult.successCount} instances, ${stopResult.failCount} failed`);
+    // logger.info(`Stopped ${stopResult.successCount} instances, ${stopResult.failCount} failed`);
 
     // Step 5: Close server
     server.close(() => {

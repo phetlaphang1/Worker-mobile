@@ -18,7 +18,7 @@ export default defineConfig({
   },
   server: {
     port: 7000,
-    host: true, // Listen on all addresses
+    host: 'localhost', // Only show localhost, not all network addresses
     strictPort: true,
     open: false,
     cors: true,

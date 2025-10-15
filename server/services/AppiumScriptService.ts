@@ -51,7 +51,8 @@ export class AppiumScriptService {
       'appium:fullReset': false,
     };
 
-    logger.info(`Creating Appium session for ${profile.name} on port ${port}`);
+    // Suppress Appium logs
+    // logger.info(`Creating Appium session for ${profile.name} on port ${port}`);
 
     const browser = await remote({
       protocol: 'http',
@@ -59,11 +60,11 @@ export class AppiumScriptService {
       port: 4723, // Appium server port
       path: '/',
       capabilities,
-      logLevel: 'info',
+      logLevel: 'silent', // Suppress Appium WebDriver logs
     });
 
     this.activeSessions.set(profile.id, browser);
-    logger.info(`Appium session created for ${profile.name}`);
+    // logger.info(`Appium session created for ${profile.name}`);
 
     return browser;
   }
@@ -79,7 +80,8 @@ export class AppiumScriptService {
 
     // Activate profile nếu chưa active
     if (profile.status !== 'active') {
-      logger.info(`Activating profile ${profile.name} for Appium session`);
+      // Suppress activation logs
+      // logger.info(`Activating profile ${profile.name} for Appium session`);
       await this.profileManager.activateProfile(profile.id);
     }
 

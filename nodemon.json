@@ -16,10 +16,6 @@
     "NODE_ENV": "development"
   },
   "delay": 500,
-  "verbose": true,
-  "events": {
-    "restart": "echo '🔄 Server restarting...'",
-    "start": "echo '🚀 Server started'",
-    "crash": "echo '💥 Server crashed - waiting for changes...'"
-  }
+  "verbose": false,
+  "quiet": true
 }

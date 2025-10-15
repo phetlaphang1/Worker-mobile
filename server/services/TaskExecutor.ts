@@ -335,7 +335,8 @@ export class TaskExecutor {
       throw new Error('No script code provided for appium_script task');
     }
 
-    logger.info(`Executing Appium script for profile ${profile.name}`);
+    // Suppress Appium execution logs
+    // logger.info(`Executing Appium script for profile ${profile.name}`);
 
     // Create Appium script task
     const appiumTask = await this.appiumScriptService.queueScript(task.scriptCode, profile.id);
