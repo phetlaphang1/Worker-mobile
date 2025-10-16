@@ -229,28 +229,83 @@ export class MobileAutomation {
     }
   }
 
-  // Find and click element (requires OCR or UI automation framework)
-  async findAndClick(text: string, options?: {
+  // Tap on element by text using ADB UI dump
+  async tapByText(text: string, options?: {
+    partialMatch?: boolean;
+    caseSensitive?: boolean;
     timeout?: number;
     scrollToFind?: boolean;
   }): Promise<boolean> {
     try {
-      // This would require integration with OCR (Tesseract.js) or
-      // UI automation framework (Appium) to find elements by text
+      const partialMatch = options?.partialMatch ?? true;
+      const caseSensitive = options?.caseSensitive ?? false;
+      const timeout = options?.timeout || 10000;
+      const startTime = Date.now();
 
-      logger.warn(`findAndClick not fully implemented yet. Looking for: ${text}`);
+      while (Date.now() - startTime < timeout) {
+        // Dump UI hierarchy
+        const uiDumpResult = await this.controller.executeAdbCommand(
+          this.config.port,
+          'shell uiautomator dump /dev/tty'
+        );
 
-      // Placeholder implementation
-      // In real implementation, you would:
-      // 1. Take screenshot
-      // 2. Use OCR to find text location
-      // 3. Click on found location
+        if (!uiDumpResult) {
+          logger.warn('Failed to get UI dump, retrying...');
+          await this.randomDelay(500, 1000);
+          continue;
+        }
 
+        // Parse XML to find element with matching text
+        const searchText = caseSensitive ? text : text.toLowerCase();
+        const regex = new RegExp(
+          `text="${partialMatch ? '.*' : ''}${searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${partialMatch ? '.*' : ''}"[^>]*bounds="\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]"`,
+          caseSensitive ? 'g' : 'gi'
+        );
+
+        const match = regex.exec(uiDumpResult);
+
+        if (match) {
+          // Extract bounds
+          const left = parseInt(match[1]);
+          const top = parseInt(match[2]);
+          const right = parseInt(match[3]);
+          const bottom = parseInt(match[4]);
+
+          // Calculate center position
+          const centerX = Math.floor((left + right) / 2);
+          const centerY = Math.floor((top + bottom) / 2);
+
+          logger.info(`Found element with text "${text}" at (${centerX}, ${centerY})`);
+
+          // Tap on the element
+          await this.tap(centerX, centerY);
+          return true;
+        }
+
+        // If scroll enabled, try scrolling to find element
+        if (options?.scrollToFind) {
+          await this.scroll('down', { distance: 300 });
+          await this.randomDelay(500, 1000);
+        } else {
+          logger.warn(`Element with text "${text}" not found in current view`);
+          await this.randomDelay(500, 1000);
+        }
+      }
+
+      logger.error(`Element with text "${text}" not found within timeout`);
       return false;
     } catch (error) {
-      logger.error(`Failed to find and click element:`, error);
+      logger.error(`Failed to tap by text:`, error);
       throw error;
     }
+  }
+
+  // Find and click element (deprecated - use tapByText instead)
+  async findAndClick(text: string, options?: {
+    timeout?: number;
+    scrollToFind?: boolean;
+  }): Promise<boolean> {
+    return this.tapByText(text, options);
   }
 
   // Wait for element to appear (requires OCR or UI automation)

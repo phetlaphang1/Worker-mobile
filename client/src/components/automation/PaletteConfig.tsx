@@ -76,6 +76,13 @@ export const PALETTE: Array<{
     defaultConfig: { tapX: 360, tapY: 640, tapOffsetRadius: 3 }
   },
   {
+    kind: "MobileTapByText",
+    label: "Mobile Tap By Text",
+    icon: <Type className="w-6 h-6" />,
+    description: "Tap vào element có text (VD: 'Đăng nhập', 'Login')",
+    defaultConfig: { tapText: "Đăng nhập", tapTextPartialMatch: true, tapTextCaseSensitive: false }
+  },
+  {
     kind: "MobileSwipe",
     label: "Mobile Swipe",
     icon: <Move className="w-6 h-6" />,

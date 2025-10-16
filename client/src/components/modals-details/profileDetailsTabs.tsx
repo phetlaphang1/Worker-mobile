@@ -360,6 +360,12 @@ export default function ProfileDetailsTabs({
             <div className="pt-4 border-t">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Device Fingerprint (Anti-Detect)</h3>
               <div className="grid grid-cols-2 gap-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                {profileData.device.resolution && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Screen Resolution</label>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{profileData.device.resolution.replace(',', 'x')}</p>
+                  </div>
+                )}
                 {profileData.device.imei && (
                   <div>
                     <label className="text-xs font-medium text-gray-500 dark:text-gray-400">IMEI</label>
@@ -397,23 +403,7 @@ export default function ProfileDetailsTabs({
           {/* Instance Hardware Settings */}
           <div className="pt-4 border-t">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Instance Hardware Settings</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="resolution">Screen Resolution</Label>
-                <Select
-                  value={formData.resolution}
-                  onValueChange={(value) => handleInputChange("resolution", value)}
-                >
-                  <SelectTrigger id="resolution">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="360,640">360x640 (Low)</SelectItem>
-                    <SelectItem value="720,1280">720x1280 (HD)</SelectItem>
-                    <SelectItem value="1080,1920">1080x1920 (Full HD)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="cpu">CPU Cores</Label>
                 <Select

@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { logger } from '../utils/logger.js';
 import { LDPlayerController, LDPlayerInstance } from '../core/LDPlayerController.js';
+import { getADBManager } from '../utils/ADBManager.js';
 
 const execAsync = promisify(exec);
 
@@ -50,7 +51,7 @@ export class DeviceMonitor {
   constructor(ldController: LDPlayerController, config?: Partial<MonitoringConfig>) {
     this.ldController = ldController;
     this.config = {
-      checkInterval: config?.checkInterval || 5000, // 5 seconds
+      checkInterval: config?.checkInterval || 10000, // 10 seconds (reduced from 5s to prevent ADB overload)
       enableLogcat: config?.enableLogcat ?? true,
       logcatDir: config?.logcatDir || path.join(process.cwd(), 'logs', 'devices'),
       logcatMaxSize: config?.logcatMaxSize || 50, // 50 MB
@@ -122,9 +123,9 @@ export class DeviceMonitor {
       // Get all instances from LDPlayer (now up-to-date)
       const ldInstances = this.ldController.getInstances();
 
-      // Get running instances from ADB
-      const adbPath = process.env.ADB_PATH || 'D:\\LDPlayer\\LDPlayer9\\adb.exe';
-      const devicesResult = await execAsync(`"${adbPath}" devices`);
+      // Get running instances from ADB using ADB Manager (with caching)
+      const adbManager = getADBManager();
+      const devicesResult = await adbManager.execute('devices');
       const connectedPorts = this.parseAdbDevices(devicesResult.stdout);
 
       logger.debug(`[DeviceMonitor] Scan: ${ldInstances.length} instances, ${connectedPorts.size} ADB devices`);
@@ -143,8 +144,29 @@ export class DeviceMonitor {
           lastChecked: new Date(),
         };
 
+        // AUTO-RECONNECT: If instance is running but ADB not connected, try to reconnect
+        if (isRunning && !isAdbConnected) {
+          logger.warn(`[SYNC] Instance ${instance.name} is running but ADB not connected, reconnecting...`);
+          try {
+            await this.ldController.connectADB(instance.port);
+
+            // Verify connection after reconnect
+            const recheckResult = await adbManager.execute('devices');
+            const recheckPorts = this.parseAdbDevices(recheckResult.stdout);
+
+            if (recheckPorts.has(instance.port)) {
+              logger.info(`✅ [SYNC] Successfully reconnected ADB for ${instance.name} on port ${instance.port}`);
+              status.isAdbConnected = true;
+            } else {
+              logger.error(`❌ [SYNC] Failed to reconnect ADB for ${instance.name} on port ${instance.port}`);
+            }
+          } catch (error) {
+            logger.error(`[SYNC] Error reconnecting ADB for ${instance.name}:`, error);
+          }
+        }
+
         // Get health metrics if enabled and device is connected
-        if (this.config.enableHealthCheck && isAdbConnected) {
+        if (this.config.enableHealthCheck && status.isAdbConnected) {
           status.health = await this.getDeviceHealth(instance.port);
         }
 
@@ -152,9 +174,9 @@ export class DeviceMonitor {
 
         // Start/stop logcat based on connection status
         if (this.config.enableLogcat) {
-          if (isAdbConnected && !this.logcatProcesses.has(instance.name)) {
+          if (status.isAdbConnected && !this.logcatProcesses.has(instance.name)) {
             await this.startLogcat(instance);
-          } else if (!isAdbConnected && this.logcatProcesses.has(instance.name)) {
+          } else if (!status.isAdbConnected && this.logcatProcesses.has(instance.name)) {
             await this.stopLogcat(instance.name);
           }
         }

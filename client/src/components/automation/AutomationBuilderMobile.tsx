@@ -1,233 +1,174 @@
-import { useState, useCallback } from "react";
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  Connection,
-  Node,
-  MarkerType,
-  ReactFlowProvider,
-  useReactFlow,
-} from "reactflow";
-import "reactflow/dist/style.css";
+import { useState, useEffect } from "react";
 import { Smartphone } from "lucide-react";
-import { useMobileLDPlayer } from "../../hooks/use-mobile-ldplayer";
-import { MobileNodeSelector } from "./MobileNodeSelector";
-import { MobileNodeEditor } from "./MobileNodeEditor";
-import { NodePalette } from "./NodePalette";
-import { NodeData, NodeKind } from "./types";
-import { generateNodeId } from "./utils";
-import { PALETTE } from "./PaletteConfig";
+import { VisualDeviceEmulator } from "../VisualDeviceEmulator";
 
-function AutomationBuilderInner() {
-  const rf = useReactFlow();
-  const { isMobile, isLDPlayer, screenSize } = useMobileLDPlayer();
-  const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [showMobileSelector, setShowMobileSelector] = useState(false);
-  const [showNodeEditor, setShowNodeEditor] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedNodeData, setSelectedNodeData] = useState<NodeData | null>(null);
-  const [draggedNodeKind, setDraggedNodeKind] = useState<NodeKind | null>(null);
+// Profile Selector Component
+function ProfileSelector({ onSelectProfile }: { onSelectProfile: (profile: any) => void }) {
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Handle connections between nodes
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...connection,
-            animated: true,
-            style: { stroke: "#60a5fa", strokeWidth: 2 },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: "#60a5fa",
-            },
-          },
-          eds
-        )
-      );
-    },
-    [setEdges]
-  );
-
-  // Add node to canvas (mobile version)
-  const handleAddNode = useCallback(
-    (kind: NodeKind) => {
-      const def = PALETTE.find((p) => p.kind === kind);
-      if (!def) return;
-
-      const id = generateNodeId(kind);
-      
-      // Add node at center of viewport
-      const viewport = rf.getViewport();
-      const centerX = (screenSize.width / 2 - viewport.x) / viewport.zoom;
-      const centerY = (screenSize.height / 2 - viewport.y) / viewport.zoom;
-
-      setNodes((nds) =>
-        nds.concat({
-          id,
-          type: "default",
-          position: { x: centerX - 100, y: centerY - 50 },
-          data: {
-            label: def.label,
-            kind: def.kind,
-            config: def.defaultConfig,
-          } as NodeData,
-        })
-      );
-
-      setSelectedNodeId(id);
-    },
-    [rf, screenSize, setNodes]
-  );
-
-  // Handle canvas tap (mobile) - Reserved for future use
-  // const handleCanvasTap = useCallback((event: React.MouseEvent | React.TouchEvent) => {
-  //   if (isMobile) {
-  //     // On mobile, show node selector instead of drag-drop
-  //     setShowMobileSelector(true);
-  //   }
-  // }, [isMobile]);
-
-  // Handle node click to open editor
-  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNodeId(node.id);
-    setSelectedNodeData(node.data as NodeData);
-    setShowNodeEditor(true);
-  }, []);
-
-  // Handle save node config
-  const handleSaveNodeConfig = useCallback((updatedData: NodeData) => {
-    if (!selectedNodeId) return;
-
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === selectedNodeId) {
-          return {
-            ...node,
-            data: updatedData,
-          };
-        }
-        return node;
+  // Fetch profiles function
+  const fetchProfiles = () => {
+    setLoading(true);
+    fetch('/api/profiles')
+      .then(res => res.json())
+      .then(data => {
+        setProfiles(Array.isArray(data) ? data : []);
+        setLoading(false);
       })
-    );
-  }, [selectedNodeId, setNodes]);
+      .catch(err => {
+        console.error('Failed to load profiles:', err);
+        setProfiles([]);
+        setLoading(false);
+      });
+  };
 
-  // Handle drag start from palette
-  const handleDragStart = useCallback((event: React.DragEvent, nodeKind: NodeKind) => {
-    setDraggedNodeKind(nodeKind);
-    event.dataTransfer.effectAllowed = "move";
+  // Fetch on mount
+  useEffect(() => {
+    fetchProfiles();
   }, []);
 
-  // Handle drag over canvas
-  const handleDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
+  // Refetch when window regains focus
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('[ProfileSelector] Window focused, refetching profiles...');
+      fetchProfiles();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
-  // Handle drop on canvas
-  const handleDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-
-      if (!draggedNodeKind) return;
-
-      const def = PALETTE.find((p) => p.kind === draggedNodeKind);
-      if (!def) return;
-
-      // Get the drop position relative to the ReactFlow canvas
-      const reactFlowBounds = event.currentTarget.getBoundingClientRect();
-      const viewport = rf.getViewport();
-
-      const x = (event.clientX - reactFlowBounds.left - viewport.x) / viewport.zoom;
-      const y = (event.clientY - reactFlowBounds.top - viewport.y) / viewport.zoom;
-
-      const id = generateNodeId(draggedNodeKind);
-
-      setNodes((nds) =>
-        nds.concat({
-          id,
-          type: "default",
-          position: { x: x - 75, y: y - 25 }, // Center the node on cursor
-          data: {
-            label: def.label,
-            kind: def.kind,
-            config: def.defaultConfig,
-          } as NodeData,
-        })
-      );
-
-      setDraggedNodeKind(null);
-    },
-    [draggedNodeKind, rf, setNodes]
-  );
-
-  return (
-    <div className="h-full w-full flex">
-      {/* Node Palette Sidebar */}
-      <NodePalette palette={PALETTE} onDragStart={handleDragStart} />
-
-      {/* ReactFlow Canvas */}
-      <div
-        className="flex-1 relative"
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={handleNodeClick}
-          fitView
-          panOnScroll={true}
-          panOnDrag={true}
-          zoomOnScroll={true}
-          minZoom={0.5}
-          maxZoom={1.5}
-        >
-          <Background gap={16} />
-          <Controls showInteractive={false} />
-          {!isMobile && <MiniMap />}
-        </ReactFlow>
-
-        {/* Info Badge */}
-        <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 rounded-full px-4 py-2 shadow-lg flex items-center gap-2 z-40">
-          <Smartphone className="w-4 h-4 text-blue-500" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {isLDPlayer ? "LDPlayer" : isMobile ? "Mobile" : "Desktop"} • {nodes.length} nodes
-          </span>
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading profiles...</p>
         </div>
       </div>
+    );
+  }
 
-      {/* Mobile Node Selector */}
-      <MobileNodeSelector
-        isOpen={showMobileSelector}
-        onClose={() => setShowMobileSelector(false)}
-        onSelectNode={handleAddNode}
-        palette={PALETTE}
-      />
+  const activeProfiles = profiles.filter(p => p.status === 'active');
 
-      {/* Mobile Node Editor */}
-      <MobileNodeEditor
-        isOpen={showNodeEditor}
-        onClose={() => setShowNodeEditor(false)}
-        nodeData={selectedNodeData}
-        onSave={handleSaveNodeConfig}
-      />
+  return (
+    <div className="max-w-4xl mx-auto p-8">
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-bold text-gray-800 mb-2">
+          Visual Device Recorder
+        </h2>
+        <p className="text-gray-600">
+          Select a running profile to start creating automation scripts visually
+        </p>
+      </div>
+
+      {activeProfiles.length === 0 ? (
+        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-8 text-center">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h3 className="text-xl font-semibold text-yellow-800 mb-2">No Active Profiles</h3>
+          <p className="text-yellow-700 mb-4">
+            Please launch a profile first from the Profiles tab.
+          </p>
+          <button
+            onClick={fetchProfiles}
+            className="px-6 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors"
+          >
+            Refresh List
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 mb-4">
+            {activeProfiles.map(profile => (
+              <button
+                key={profile.id}
+                onClick={() => onSelectProfile(profile)}
+                className="group p-6 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all text-left hover:shadow-lg"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Smartphone className="w-6 h-6 text-blue-500" />
+                      <h3 className="text-lg font-semibold text-gray-800">
+                        {profile.name}
+                      </h3>
+                      <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                        Active
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600 ml-9">
+                      <span className="font-medium">Instance:</span> {profile.instanceName}
+                      <span className="mx-2">•</span>
+                      <span className="font-medium">Port:</span> {profile.port}
+                    </div>
+                    {profile.device?.brand && (
+                      <div className="text-xs text-gray-500 ml-9 mt-1">
+                        {profile.device.brand} {profile.device.model}
+                        {profile.device.realResolution && (
+                          <span> • {profile.device.realResolution}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-blue-500 group-hover:translate-x-2 transition-transform">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="text-center">
+            <button
+              onClick={fetchProfiles}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              Refresh Profile List
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
 export default function AutomationBuilderMobile() {
+  const [selectedProfile, setSelectedProfile] = useState<any>(null);
+
   return (
-    <ReactFlowProvider>
-      <AutomationBuilderInner />
-    </ReactFlowProvider>
+    <div className="h-full w-full bg-gray-50">
+      {selectedProfile ? (
+        <div className="h-full w-full p-6">
+          {/* Header */}
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Visual Device Recorder</h2>
+              <p className="text-sm text-gray-600">
+                Recording on: <span className="font-medium">{selectedProfile.name}</span> ({selectedProfile.instanceName})
+              </p>
+            </div>
+            <button
+              onClick={() => setSelectedProfile(null)}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              ← Change Profile
+            </button>
+          </div>
+
+          {/* Visual Device Emulator */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <VisualDeviceEmulator
+              profileId={selectedProfile.id}
+              port={selectedProfile.port}
+              instanceName={selectedProfile.instanceName}
+            />
+          </div>
+        </div>
+      ) : (
+        <ProfileSelector onSelectProfile={setSelectedProfile} />
+      )}
+    </div>
   );
 }

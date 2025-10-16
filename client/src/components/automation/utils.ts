@@ -295,3 +295,132 @@ export const hasUnsavedChanges = (
 
   return currentNodesStr !== savedNodesStr || currentEdgesStr !== savedEdgesStr;
 };
+
+// Convert Mobile Workflow Nodes to DirectMobileScript code
+export const convertMobileWorkflowToScript = (
+  nodes: Node<NodeData>[],
+  edges: Edge[]
+): string => {
+  const scriptLines: string[] = [];
+
+  // Add header comment
+  scriptLines.push('// Auto-generated script from Mobile Workflow');
+  scriptLines.push('// Generated at: ' + new Date().toISOString());
+  scriptLines.push('');
+
+  // Sort nodes in execution order
+  const sortedNodeIds = topologicalSort(nodes, edges);
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  // Convert each node to script code
+  sortedNodeIds.forEach((nodeId, index) => {
+    const node = nodeMap.get(nodeId);
+    if (!node) return;
+
+    const kind = node.data.kind;
+    const config = node.data.config || {};
+
+    scriptLines.push(`// Step ${index + 1}: ${node.data.label}`);
+
+    switch (kind) {
+      case 'MobileTap':
+        scriptLines.push(`await helpers.tap(${config.tapX || 0}, ${config.tapY || 0});`);
+        if (config.tapOffsetRadius && config.tapOffsetRadius > 0) {
+          scriptLines.push(`// Offset radius: ${config.tapOffsetRadius}px`);
+        }
+        break;
+
+      case 'MobileTapByText':
+        const tapText = config.tapText || '';
+        const partialMatch = config.tapTextPartialMatch ?? true;
+        const caseSensitive = config.tapTextCaseSensitive ?? false;
+        scriptLines.push(`await helpers.tapByText('${tapText}', { partialMatch: ${partialMatch}, caseSensitive: ${caseSensitive} });`);
+        break;
+
+      case 'MobileSwipe':
+        scriptLines.push(
+          `await helpers.swipe(${config.swipeX1 || 0}, ${config.swipeY1 || 0}, ${config.swipeX2 || 0}, ${config.swipeY2 || 0}, ${config.swipeDuration || 500});`
+        );
+        break;
+
+      case 'MobileScroll':
+        if (config.scrollDirection === 'down') {
+          scriptLines.push(`await helpers.scrollDown();`);
+        } else if (config.scrollDirection === 'up') {
+          scriptLines.push(`await helpers.scrollUp();`);
+        } else {
+          const distance = config.scrollDistance || 400;
+          const duration = config.scrollDuration || 500;
+          scriptLines.push(`// Custom scroll: ${config.scrollDirection}, distance: ${distance}px`);
+          scriptLines.push(`await helpers.swipe(180, 400, 180, ${400 - distance}, ${duration});`);
+        }
+        break;
+
+      case 'MobileLongPress':
+        scriptLines.push(`// Long press at (${config.longPressX}, ${config.longPressY}) for ${config.longPressDuration}ms`);
+        scriptLines.push(`await helpers.tap(${config.longPressX || 0}, ${config.longPressY || 0});`);
+        scriptLines.push(`await helpers.sleep(${config.longPressDuration || 1000});`);
+        break;
+
+      case 'MobileDoubleTap':
+        scriptLines.push(`// Double tap at (${config.doubleTapX}, ${config.doubleTapY})`);
+        scriptLines.push(`await helpers.tap(${config.doubleTapX || 0}, ${config.doubleTapY || 0});`);
+        scriptLines.push(`await helpers.sleep(100);`);
+        scriptLines.push(`await helpers.tap(${config.doubleTapX || 0}, ${config.doubleTapY || 0});`);
+        break;
+
+      case 'MobilePinch':
+        scriptLines.push(`// Pinch gesture: ${config.pinchZoom || 'in'} at (${config.pinchCenterX}, ${config.pinchCenterY})`);
+        scriptLines.push(`// Note: Pinch gesture requires manual implementation via swipe`);
+        break;
+
+      case 'MobileTypeText':
+        if (config.mobileFieldX && config.mobileFieldY) {
+          scriptLines.push(`await helpers.tap(${config.mobileFieldX}, ${config.mobileFieldY});`);
+          scriptLines.push(`await helpers.sleep(300);`);
+        }
+        if (config.mobileClearFirst) {
+          scriptLines.push(`// Clear field first`);
+          scriptLines.push(`await helpers.pressKey('DELETE');`);
+        }
+        scriptLines.push(`await helpers.type('${config.mobileText || ''}');`);
+        break;
+
+      case 'MobileWait':
+        scriptLines.push(`await helpers.sleep(${config.mobileWaitTimeout || 2000});`);
+        break;
+
+      case 'MobileScreenshot':
+        const screenshotPath = config.screenshotPath || '/sdcard/screenshot.png';
+        scriptLines.push(`const screenshotPath = await helpers.screenshot('${screenshotPath}');`);
+        scriptLines.push(`helpers.log('Screenshot saved: ' + screenshotPath);`);
+        break;
+
+      case 'MobileOpenApp':
+        if (config.appPackageName) {
+          scriptLines.push(`await helpers.launchApp('${config.appPackageName}');`);
+          scriptLines.push(`await helpers.sleep(2000); // Wait for app to launch`);
+        }
+        break;
+
+      case 'MobileBack':
+        scriptLines.push(`await helpers.pressKey('BACK');`);
+        break;
+
+      case 'MobileHome':
+        scriptLines.push(`await helpers.pressKey('HOME');`);
+        break;
+
+      default:
+        scriptLines.push(`// TODO: Implement ${kind} node`);
+        break;
+    }
+
+    scriptLines.push('');
+  });
+
+  // Add completion log
+  scriptLines.push('helpers.log("Workflow execution completed successfully!");');
+
+  return scriptLines.join('\n');
+};

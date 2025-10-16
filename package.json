@@ -27,7 +27,8 @@
     "detect-ldplayer": "tsx server/utils/detectLDPlayer.ts",
     "setup-adb": "tsx scripts/setup-all-adb.ts",
     "sync-resolution": "tsx scripts/sync-resolution.ts",
-    "enable-usb-debugging": "tsx scripts/enable-usb-debugging.ts"
+    "enable-usb-debugging": "tsx scripts/enable-usb-debugging.ts",
+    "migrate:device-resolution": "tsx scripts/migrate-device-resolution.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",

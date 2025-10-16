@@ -17,6 +17,10 @@ import DeviceMonitor from '../services/DeviceMonitor.js';
 
 import FingerprintService from '../services/FingerprintService.js';
 import proxyRouter from './proxy.js';
+import { setupIsolationRoutes } from './isolation.js';
+import ProfileIsolationService from '../services/ProfileIsolationService.js';
+import SessionManager from '../services/SessionManager.js';
+import ActionRecorder from '../services/ActionRecorder.js';
 
 interface RouteServices {
   ldPlayerController: LDPlayerController;
@@ -28,16 +32,24 @@ interface RouteServices {
   uiInspectorService?: UIInspectorService;
   deviceMonitor?: DeviceMonitor;
   fingerprintService?: FingerprintService;
+  isolationService?: ProfileIsolationService;
+  sessionManager?: SessionManager;
+  actionRecorder?: ActionRecorder;
 }
 
 export function setupRoutes(app: Express, services: RouteServices) {
-  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService, deviceMonitor, fingerprintService } = services;
+  const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService, deviceMonitor, fingerprintService, isolationService, sessionManager, actionRecorder } = services;
 
   // Setup authentication routes first
   setupAuthRoutes(app);
 
   // Setup proxy management routes
   app.use(proxyRouter);
+
+  // Setup isolation routes (GemLogin-like features)
+  if (isolationService && sessionManager && actionRecorder) {
+    setupIsolationRoutes(app, isolationService, sessionManager, actionRecorder);
+  }
 
   // Health check
   app.get('/health', (req: Request, res: Response) => {
@@ -289,6 +301,39 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error launching app:', error);
       res.status(500).json({ error: 'Failed to launch app' });
+    }
+  });
+
+  // Clear app data (reset app to initial state)
+  app.post('/api/profiles/:profileId/clear-app-data', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const { packageName } = req.body;
+
+      if (!packageName) {
+        return res.status(400).json({ error: 'packageName is required' });
+      }
+
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (profile.status !== 'active') {
+        return res.status(400).json({ error: 'Profile must be active to clear app data' });
+      }
+
+      // Clear app data using LDPlayerController
+      await ldPlayerController.clearAppData(profile.port, packageName);
+
+      logger.info(`Cleared data for ${packageName} on profile ${profile.name}`);
+      res.json({
+        success: true,
+        message: `App data cleared for ${packageName}. The app will restart in clean state.`
+      });
+    } catch (error) {
+      logger.error('Error clearing app data:', error);
+      res.status(500).json({ error: 'Failed to clear app data' });
     }
   });
 

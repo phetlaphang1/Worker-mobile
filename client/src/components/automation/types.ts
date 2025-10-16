@@ -1,7 +1,7 @@
 // Node types
 export type NodeKind = "GoTo" | "Type" | "Click" | "MultiType" | "If" | "Else" | "Wait" | "Sleep" | "For" | "While" | "Variable" | "Extract" | "Navigation" | "SwitchFrame" | "SwitchTab" | "ScrollTo" | "Select" | "Loop" | "EndLoop" | "DataProcess" | "Log" | "HttpRequest" | "AI" | "CaptchaSolver" |
   // Mobile automation nodes
-  "MobileTap" | "MobileSwipe" | "MobileScroll" | "MobileLongPress" | "MobileDoubleTap" | "MobilePinch" | "MobileBack" | "MobileHome" | "MobileTypeText" | "MobileWait" | "MobileScreenshot" | "MobileOpenApp";
+  "MobileTap" | "MobileTapByText" | "MobileSwipe" | "MobileScroll" | "MobileLongPress" | "MobileDoubleTap" | "MobilePinch" | "MobileBack" | "MobileHome" | "MobileTypeText" | "MobileWait" | "MobileScreenshot" | "MobileOpenApp";
 
 // Cấu hình của từng node
 export type NodeData = {
@@ -105,6 +105,10 @@ export type NodeData = {
     tapOffsetRadius?: number;
     tapBeforeDelay?: [number, number];
     tapAfterDelay?: [number, number];
+    // MobileTapByText
+    tapText?: string;
+    tapTextPartialMatch?: boolean;
+    tapTextCaseSensitive?: boolean;
     // MobileSwipe
     swipeX1?: number;
     swipeY1?: number;

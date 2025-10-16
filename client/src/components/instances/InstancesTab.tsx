@@ -28,6 +28,10 @@ export function InstancesTab() {
     // No polling - rely entirely on WebSocket for real-time updates
     // Only refetch when explicitly triggered by user actions or WebSocket events
     refetchInterval: false,
+    // Refetch when window regains focus (user comes back to tab)
+    refetchOnWindowFocus: true,
+    // Don't use stale cache data - always fetch fresh on mount
+    staleTime: 0,
   });
 
   // Fetch device monitor statuses
@@ -52,6 +56,10 @@ export function InstancesTab() {
       // Poll every 3s ONLY if devices are starting, otherwise disable polling
       return hasTransitionalDevices ? 3000 : false;
     },
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
+    // Don't use stale cache - always fetch fresh
+    staleTime: 0,
   });
 
   // WebSocket connection for real-time updates
@@ -116,6 +124,10 @@ export function InstancesTab() {
       // Poll every 2s ONLY if tasks are running, otherwise disable polling completely
       return hasRunningTasks ? 2000 : false;
     },
+    // Refetch when window regains focus
+    refetchOnWindowFocus: true,
+    // Don't use stale cache - always fetch fresh
+    staleTime: 0,
   });
 
   // Merge device monitor data and task status with profiles

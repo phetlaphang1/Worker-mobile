@@ -23,6 +23,8 @@ export interface MobileProfile {
     model?: string;
     manufacturer?: string;
     brand?: string;
+    resolution?: string; // Real device resolution (e.g., "1080x2400")
+    dpi?: number; // Real device DPI (e.g., 420)
   };
   network: {
     useProxy: boolean;
@@ -58,6 +60,7 @@ export class ProfileManager {
   private profilesPath: string;
   private scriptExecutor: any; // Will be injected later
   private fingerprintService?: FingerprintService; // Will be injected later
+  private broadcastStatus?: (type: string, data: any) => void; // WebSocket broadcast for status updates
 
   constructor(controller: LDPlayerController) {
     this.controller = controller;
@@ -73,6 +76,12 @@ export class ProfileManager {
   // Inject fingerprint service (to avoid circular dependency)
   setFingerprintService(fingerprintService: FingerprintService): void {
     this.fingerprintService = fingerprintService;
+  }
+
+  // Inject broadcast function for WebSocket status updates
+  setBroadcastStatus(broadcastStatusFn: (type: string, data: any) => void): void {
+    this.broadcastStatus = broadcastStatusFn;
+    logger.info('ProfileManager: WebSocket broadcast function injected');
   }
 
   // Public async initialization method - must be called before using ProfileManager
@@ -218,7 +227,9 @@ export class ProfileManager {
             androidId: fingerprint.androidId,
             model: fingerprint.model,
             manufacturer: fingerprint.manufacturer,
-            brand: fingerprint.brand
+            brand: fingerprint.brand,
+            resolution: fingerprint.realResolution, // Save real device resolution
+            dpi: fingerprint.realDpi // Save real device DPI
           };
 
           logger.info(`✅ Fingerprint applied: ${fingerprint.brand} ${fingerprint.model} (IMEI: ${fingerprint.imei})`);
@@ -261,6 +272,19 @@ export class ProfileManager {
       profile.status = 'active';
       profile.lastUsed = new Date();
       await this.saveProfile(profile);
+
+      // Broadcast status update via WebSocket
+      if (this.broadcastStatus) {
+        this.broadcastStatus('profile_status_update', {
+          profileId: profile.id,
+          status: 'active',
+          instanceName: profile.instanceName,
+          timestamp: new Date().toISOString()
+        });
+        logger.info(`[ProfileManager] Broadcasted status update for profile ${profileId}: active`);
+      } else {
+        logger.warn(`[ProfileManager] broadcastStatus is not set, cannot notify clients`);
+      }
 
       logger.info(`[ProfileManager] Launched instance only: ${profile.name}`);
     } catch (error) {
@@ -348,6 +372,17 @@ export class ProfileManager {
       // Update profile status
       profile.status = 'inactive';
       await this.saveProfile(profile);
+
+      // Broadcast status update via WebSocket
+      if (this.broadcastStatus) {
+        this.broadcastStatus('profile_status_update', {
+          profileId: profile.id,
+          status: 'inactive',
+          instanceName: profile.instanceName,
+          timestamp: new Date().toISOString()
+        });
+        logger.info(`[ProfileManager] Broadcasted status update for profile ${profileId}: inactive`);
+      }
 
       logger.info(`Deactivated profile: ${profile.name}`);
     } catch (error) {
@@ -628,7 +663,9 @@ export class ProfileManager {
           androidId: fingerprint.androidId,
           model: fingerprint.model,
           manufacturer: fingerprint.manufacturer,
-          brand: fingerprint.brand
+          brand: fingerprint.brand,
+          resolution: fingerprint.realResolution, // Save real device resolution
+          dpi: fingerprint.realDpi // Save real device DPI
         };
 
         logger.info(`✅ New fingerprint applied to clone: ${fingerprint.brand} ${fingerprint.model} (IMEI: ${fingerprint.imei})`);

@@ -224,7 +224,17 @@ export class LDPlayerController {
           instance = this.instances.get(name);
 
           if (!instance) {
-            throw new Error(`Instance ${name} not found`);
+            // List available instances for debugging
+            const availableInstances = [...this.instances.keys()];
+            logger.error(`Instance "${name}" not found in LDPlayer!`);
+            logger.error(`Available instances (${availableInstances.length}):`);
+            availableInstances.slice(0, 10).forEach(n => logger.error(`  - ${n}`));
+
+            throw new Error(
+              `Instance "${name}" not found in LDPlayer. ` +
+              `This instance may have been deleted or renamed. ` +
+              `Available instances: ${availableInstances.slice(0, 5).join(', ')}${availableInstances.length > 5 ? '...' : ''}`
+            );
           }
           logger.info(`Instance ${name} discovered and registered`);
         }
@@ -473,10 +483,36 @@ export class LDPlayerController {
       const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`).catch(() => ({ stdout: '' }));
       const isActuallyRunning = runningListResult.stdout.includes(name);
 
-      // Check ADB connectivity
+      // Get ALL connected ADB devices to find actual port
       const devicesResult = await execAsync(`"${this.adbPath}" devices`);
-      const isAdbConnected = devicesResult.stdout.includes(`127.0.0.1:${instance.port}`) ||
-                            devicesResult.stdout.includes(`emulator-${instance.port}`);
+      const deviceLines = devicesResult.stdout.trim().split('\n');
+
+      // Parse all connected ports
+      const connectedPorts: number[] = [];
+      for (const line of deviceLines) {
+        const emulatorMatch = line.match(/emulator-(\d+)\s+device/);
+        const ipMatch = line.match(/127\.0\.0\.1:(\d+)\s+device/);
+        if (emulatorMatch) {
+          connectedPorts.push(parseInt(emulatorMatch[1], 10));
+        } else if (ipMatch) {
+          connectedPorts.push(parseInt(ipMatch[1], 10));
+        }
+      }
+
+      // Check if instance port is connected (formula-based port)
+      let isAdbConnected = connectedPorts.includes(instance.port);
+      let actualPort = instance.port;
+
+      // If formula port not connected but instance is running, find actual port
+      if (isActuallyRunning && !isAdbConnected && connectedPorts.length > 0) {
+        // Try to map to actual ADB port (only one running instance case)
+        if (connectedPorts.length === 1) {
+          actualPort = connectedPorts[0];
+          instance.port = actualPort; // Update stored port
+          isAdbConnected = true;
+          logger.info(`[SYNC] Updated port for ${name}: formula=${5555 + instance.index * 2} -> actual=${actualPort}`);
+        }
+      }
 
       // Update state
       const oldStatus = instance.status;
@@ -486,11 +522,20 @@ export class LDPlayerController {
         logger.info(`[SYNC] Instance ${name} state synced: ${oldStatus} -> ${instance.status}`);
       }
 
-      // If running but ADB not connected, reconnect
+      // If running but ADB not connected, try to reconnect
       if (isActuallyRunning && !isAdbConnected) {
         logger.warn(`[SYNC] Instance ${name} is running but ADB not connected, reconnecting...`);
         try {
-          await this.connectADB(instance.port);
+          // Try to connect using actual port if we found one
+          await this.connectADB(actualPort);
+
+          // Verify connection
+          const recheckResult = await execAsync(`"${this.adbPath}" devices`);
+          if (recheckResult.stdout.includes(`127.0.0.1:${actualPort}`) ||
+              recheckResult.stdout.includes(`emulator-${actualPort}`)) {
+            isAdbConnected = true;
+            logger.info(`✅ [SYNC] Successfully reconnected ADB for ${name} on port ${actualPort}`);
+          }
         } catch (error) {
           logger.error(`[SYNC] Failed to reconnect ADB for ${name}:`, error);
         }
@@ -997,10 +1042,15 @@ export class LDPlayerController {
 
   async disconnectADB(port: number): Promise<void> {
     try {
-      await execAsync(`"${this.adbPath}" disconnect 127.0.0.1:${port}`);
+      const result = await execAsync(`"${this.adbPath}" disconnect 127.0.0.1:${port}`);
       logger.info(`ADB disconnected from port ${port}`);
-    } catch (error) {
-      logger.error(`Failed to disconnect ADB from port ${port}:`, error);
+    } catch (error: any) {
+      // Only log error if it's not "no such device" (device already disconnected)
+      if (!error.stderr?.includes('no such device')) {
+        logger.error(`Failed to disconnect ADB from port ${port}:`, error);
+      } else {
+        logger.debug(`ADB device already disconnected from port ${port}`);
+      }
     }
   }
 
@@ -1125,6 +1175,37 @@ export class LDPlayerController {
   async closeApp(port: number, packageName: string): Promise<void> {
     await this.executeAdbCommand(port, `shell am force-stop ${packageName}`);
     logger.info(`Closed app ${packageName} on port ${port}`);
+  }
+
+  /**
+   * Clear app data (equivalent to pm clear)
+   * This will reset the app to its initial state, removing all data, cache, and login sessions
+   *
+   * @param port - ADB port number
+   * @param packageName - App package name (e.g., com.twitter.android)
+   */
+  async clearAppData(port: number, packageName: string): Promise<void> {
+    try {
+      await this.executeAdbCommand(port, `shell pm clear ${packageName}`);
+      logger.info(`✅ Cleared all data for ${packageName} on port ${port}`);
+    } catch (error) {
+      logger.error(`Failed to clear app data for ${packageName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear app data by instance name and package name
+   *
+   * @param instanceName - Instance name
+   * @param packageName - App package name
+   */
+  async clearAppDataByInstance(instanceName: string, packageName: string): Promise<void> {
+    const instance = this.getInstance(instanceName);
+    if (!instance) {
+      throw new Error(`Instance ${instanceName} not found`);
+    }
+    return this.clearAppData(instance.port, packageName);
   }
 
   async isAppInstalled(port: number, packageName: string): Promise<boolean> {

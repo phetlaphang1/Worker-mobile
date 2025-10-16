@@ -70,6 +70,31 @@ const deviceMonitor = new DeviceMonitor(ldPlayerController, {
 // Fingerprint Service - Device fingerprint randomization (GemLogin-like)
 const fingerprintService = new FingerprintService(ldPlayerController);
 
+// Session Management - Save/restore browser state (GemLogin-like)
+const { default: SessionManager } = await import('./services/SessionManager.js');
+const sessionManager = new SessionManager(ldPlayerController);
+
+// Action Recorder - Record and playback actions (GemLogin-like)
+const { default: ActionRecorder } = await import('./services/ActionRecorder.js');
+const actionRecorder = new ActionRecorder(ldPlayerController);
+
+// Profile Isolation Service - Complete GemLogin-like isolation
+const { default: ProfileIsolationService } = await import('./services/ProfileIsolationService.js');
+const { default: ProxyManager } = await import('./services/ProxyManager.js');
+const proxyManager = new ProxyManager({
+  proxies: [],
+  rotationStrategy: 'least-used',
+  maxUsagePerProxy: 100
+});
+const isolationService = new ProfileIsolationService(
+  ldPlayerController,
+  fingerprintService,
+  proxyManager,
+  sessionManager,
+  actionRecorder,
+  profileManager
+);
+
 // TaskExecutor can use either service
 // For simplicity, we default to DirectScriptService (no Appium server needed)
 const taskExecutor = new TaskExecutor(ldPlayerController, profileManager, {
@@ -118,6 +143,7 @@ function broadcastLog(logType: 'task' | 'profile', id: number, logMessage: strin
 taskExecutor.setBroadcast(broadcast);
 directScriptService.setBroadcast(broadcastLog);
 directScriptService.setBroadcastStatus(broadcast); // For profile status updates
+profileManager.setBroadcastStatus(broadcast); // For profile status updates from ProfileManager
 
 // WebSocket connection handling
 wss.on('connection', (ws) => {
@@ -227,7 +253,10 @@ setupRoutes(app, {
   directScriptService, // For most users - simple ADB automation
   uiInspectorService, // Auto XPath generation
   deviceMonitor, // Real-time monitoring and logcat
-  fingerprintService // Device fingerprint randomization (GemLogin-like)
+  fingerprintService, // Device fingerprint randomization (GemLogin-like)
+  isolationService, // Complete profile isolation (GemLogin-like)
+  sessionManager, // Session management (GemLogin-like)
+  actionRecorder // Action recording & playback (GemLogin-like)
 });
 
 // Serve React app for all non-API routes
@@ -262,6 +291,18 @@ async function startServices() {
     await profileManager.initialize();
     // logger.info('Profile manager initialized');
 
+    // Initialize session manager
+    await sessionManager.initialize();
+    // logger.info('Session manager initialized');
+
+    // Initialize action recorder
+    await actionRecorder.initialize();
+    // logger.info('Action recorder initialized');
+
+    // Initialize profile isolation service
+    await isolationService.initialize();
+    // logger.info('Profile isolation service initialized');
+
     // Start task executor
     await taskExecutor.start();
     // logger.info('Task executor started');
@@ -270,8 +311,8 @@ async function startServices() {
     await deviceMonitor.start();
     // logger.info('Device monitor started');
 
-    // Initialize proxy manager
-    const proxyManager = initializeProxyManager({
+    // Initialize proxy manager from routes (for backward compatibility)
+    const routeProxyManager = initializeProxyManager({
       proxies: [],
       rotationStrategy: 'least-used',
       maxUsagePerProxy: 100

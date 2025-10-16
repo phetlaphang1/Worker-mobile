@@ -81,6 +81,43 @@ export function MobileNodeEditor({
           </>
         );
 
+      case "MobileTapByText":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Text cần tìm</Label>
+              <Input
+                type="text"
+                value={editedData.config?.tapText || ""}
+                onChange={(e) => updateConfig("tapText", e.target.value)}
+                placeholder="Đăng nhập"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editedData.config?.tapTextPartialMatch ?? true}
+                  onChange={(e) => updateConfig("tapTextPartialMatch", e.target.checked)}
+                  className="rounded"
+                />
+                Tìm kiếm một phần (partial match)
+              </Label>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editedData.config?.tapTextCaseSensitive ?? false}
+                  onChange={(e) => updateConfig("tapTextCaseSensitive", e.target.checked)}
+                  className="rounded"
+                />
+                Phân biệt hoa thường (case sensitive)
+              </Label>
+            </div>
+          </>
+        );
+
       case "MobileSwipe":
         return (
           <>
@@ -372,27 +409,20 @@ export function MobileNodeEditor({
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/60 z-[100] animate-in fade-in backdrop-blur-sm"
-        onClick={onClose}
-        style={{ touchAction: "none" }}
-      />
-
-      {/* Bottom Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl z-[101] animate-in slide-in-from-bottom duration-300 max-h-[85vh] flex flex-col">
+      {/* Right Sidebar Panel */}
+      <div className="fixed top-0 right-0 bottom-0 w-full sm:w-96 bg-white dark:bg-gray-900 shadow-2xl z-[101] animate-in slide-in-from-right duration-300 flex flex-col border-l-2 border-gray-200 dark:border-gray-700">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-500 to-purple-500">
+          <h2 className="text-lg font-bold text-white">
             Edit {editedData.label}
           </h2>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="rounded-full h-10 w-10"
+            className="rounded-full h-10 w-10 hover:bg-white/20 text-white"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </Button>
         </div>
 
@@ -403,10 +433,10 @@ export function MobileNodeEditor({
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
-          <Button variant="outline" onClick={onClose} className="flex-1 h-12">
+          <Button variant="outline" onClick={onClose} className="flex-1 h-11">
             Hủy
           </Button>
-          <Button onClick={handleSave} className="flex-1 h-12 bg-blue-600 hover:bg-blue-700">
+          <Button onClick={handleSave} className="flex-1 h-11 bg-blue-600 hover:bg-blue-700">
             Lưu
           </Button>
         </div>
