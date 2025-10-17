@@ -113,29 +113,46 @@ export function Dashboard() {
     }
   }, [autoRefresh]);
 
-  // Bulk actions
+  // Bulk actions - Using new batch API endpoints
   const handleLaunchAll = async () => {
-    const inactiveProfiles = profiles.filter((p) => p.status === 'inactive');
-    for (const profile of inactiveProfiles) {
-      try {
-        await axios.post(`http://localhost:5051/api/profiles/${profile.id}/activate`);
-      } catch (error) {
-        console.error(`Failed to launch ${profile.name}:`, error);
+    try {
+      setIsLoading(true);
+      const response = await axios.post('http://localhost:5051/api/profiles/run-all-with-scripts', {
+        onlyInactive: true,
+        delay: 3000,
+        maxConcurrent: 3
+      });
+
+      if (response.data.success) {
+        console.log(`✅ Run All: ${response.data.successCount} launched, ${response.data.failCount} failed, ${response.data.skippedCount} skipped`);
       }
+
+      await fetchData();
+    } catch (error) {
+      console.error('Failed to launch all profiles:', error);
+    } finally {
+      setIsLoading(false);
     }
-    await fetchData();
   };
 
   const handleStopAll = async () => {
-    const activeProfiles = profiles.filter((p) => p.status === 'active');
-    for (const profile of activeProfiles) {
-      try {
-        await axios.post(`http://localhost:5051/api/profiles/${profile.id}/deactivate`);
-      } catch (error) {
-        console.error(`Failed to stop ${profile.name}:`, error);
+    try {
+      setIsLoading(true);
+      const response = await axios.post('http://localhost:5051/api/profiles/stop-all', {
+        onlyActive: true,
+        delay: 2000
+      });
+
+      if (response.data.success) {
+        console.log(`✅ Stop All: ${response.data.successCount} stopped, ${response.data.failCount} failed, ${response.data.skippedCount} skipped`);
       }
+
+      await fetchData();
+    } catch (error) {
+      console.error('Failed to stop all profiles:', error);
+    } finally {
+      setIsLoading(false);
     }
-    await fetchData();
   };
 
   // Execute Appium script

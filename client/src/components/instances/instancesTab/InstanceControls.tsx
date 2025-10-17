@@ -15,6 +15,8 @@ import {
   PauseCircle,
   Filter,
   RefreshCw,
+  Play,
+  Square,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +41,10 @@ interface InstanceControlsProps {
   };
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onRunAll?: () => void;
+  onStopAll?: () => void;
+  isRunningAll?: boolean;
+  isStoppingAll?: boolean;
 }
 
 export const InstanceControls: React.FC<InstanceControlsProps> = ({
@@ -55,6 +61,10 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
   deviceMonitorStats,
   onRefresh,
   isRefreshing = false,
+  onRunAll,
+  onStopAll,
+  isRunningAll = false,
+  isStoppingAll = false,
 }) => {
   const { toast } = useToast();
 
@@ -70,6 +80,24 @@ export const InstanceControls: React.FC<InstanceControlsProps> = ({
           >
             <Plus className="h-4 w-4 mr-2" />
             {isCreating ? "Creating Instance..." : "New Instance"}
+          </Button>
+
+          <Button
+            onClick={onRunAll}
+            disabled={isRunningAll || !onRunAll}
+            className="bg-green-600 text-white hover:bg-green-700"
+          >
+            <Play className={`h-4 w-4 mr-2 ${isRunningAll ? 'animate-pulse' : ''}`} />
+            {isRunningAll ? "Running All..." : "Run All"}
+          </Button>
+
+          <Button
+            onClick={onStopAll}
+            disabled={isStoppingAll || !onStopAll}
+            className="bg-red-600 text-white hover:bg-red-700"
+          >
+            <Square className={`h-4 w-4 mr-2 ${isStoppingAll ? 'animate-pulse' : ''}`} />
+            {isStoppingAll ? "Stopping All..." : "Stop All"}
           </Button>
 
           <Button

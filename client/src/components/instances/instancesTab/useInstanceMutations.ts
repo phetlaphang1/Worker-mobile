@@ -300,6 +300,71 @@ export const useInstanceMutations = () => {
     },
   });
 
+  const runAllMutation = useMutation({
+    mutationFn: async (options?: { onlyInactive?: boolean; delay?: number; maxConcurrent?: number }) => {
+      const response = await fetch('http://localhost:5051/api/profiles/run-all-with-scripts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          onlyInactive: options?.onlyInactive ?? true,
+          delay: options?.delay ?? 3000,
+          maxConcurrent: options?.maxConcurrent ?? 3
+        })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to run all profiles');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      toast({
+        title: "Run All Complete",
+        description: `✅ ${data.successCount} launched, ❌ ${data.failCount} failed, ⏭️ ${data.skippedCount} skipped`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Run All Failed",
+        description: error.message || "Failed to launch all profiles",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const stopAllMutation = useMutation({
+    mutationFn: async (options?: { onlyActive?: boolean; delay?: number }) => {
+      const response = await fetch('http://localhost:5051/api/profiles/stop-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          onlyActive: options?.onlyActive ?? true,
+          delay: options?.delay ?? 2000
+        })
+      });
+      if (!response.ok) {
+        throw new Error('Failed to stop all profiles');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      toast({
+        title: "Stop All Complete",
+        description: `✅ ${data.successCount} stopped, ❌ ${data.failCount} failed, ⏭️ ${data.skippedCount} skipped`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Stop All Failed",
+        description: error.message || "Failed to stop all profiles",
+        variant: "destructive",
+      });
+    },
+  });
+
   return {
     launchProfileMutation,
     deleteProfileMutation,
@@ -308,6 +373,8 @@ export const useInstanceMutations = () => {
     createNewProfileMutation,
     updateScriptMutation,
     launchInstanceOnlyMutation,
-    refreshStatusMutation
+    refreshStatusMutation,
+    runAllMutation,
+    stopAllMutation
   };
 };

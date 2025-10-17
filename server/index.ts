@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
 import LDPlayerController from './core/LDPlayerController.js';
 import ProfileManager from './services/ProfileManager.js';
 import TaskExecutor from './services/TaskExecutor.js';
@@ -20,6 +21,49 @@ import { initializeProxyManager } from './routes/proxy.js';
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Utility: Kill process using a specific port
+async function killProcessOnPort(port: number | string): Promise<void> {
+  try {
+    const portNum = typeof port === 'string' ? parseInt(port) : port;
+
+    // Find process using the port
+    const netstatOutput = execSync(`netstat -ano | findstr :${portNum}`).toString();
+    const lines = netstatOutput.split('\n').filter(line => line.includes('LISTENING'));
+
+    if (lines.length === 0) {
+      // No process using this port
+      return;
+    }
+
+    // Extract PIDs from netstat output
+    const pids = new Set<string>();
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      const pid = parts[parts.length - 1];
+      if (pid && pid !== '0') {
+        pids.add(pid);
+      }
+    }
+
+    // Kill each PID
+    for (const pid of pids) {
+      try {
+        logger.info(`🔧 Killing process ${pid} on port ${portNum}...`);
+        execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+        logger.info(`✅ Process ${pid} killed successfully`);
+      } catch (killError) {
+        // Process might already be dead, ignore
+      }
+    }
+
+    // Wait a moment for port to be released
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+  } catch (error) {
+    // No process found or netstat failed - that's fine
+  }
+}
 
 // Initialize Express app
 const app = express();
@@ -330,10 +374,12 @@ async function startServices() {
     // Server port
     const port = process.env.PORT || 5051;
 
+    // Kill any existing process using the port before starting
+    await killProcessOnPort(port);
+
     // Start server
     server.listen(port, () => {
-      // Suppress startup logs - only show if error occurs
-      // logger.info(`Mobile Worker server running on port ${port}`);
+      logger.info(`✅ Mobile Worker server running on port ${port}`);
       // logger.info(`WebSocket server ready on ws://localhost:${port}`);
 
       // Suppress banner - too noisy for production

@@ -34,7 +34,9 @@
       "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" backup --name \"test21323\" --file \"D:\\BArmy\\Worker-mobile\\temp\\test_backup.ldbk\")",
       "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" add --name \"CLONE_VIA_RESTORE_TEST\")",
       "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" restore --name \"CLONE_VIA_RESTORE_TEST\" --file \"D:\\BArmy\\Worker-mobile\\temp\\test_backup.ldbk\")",
-      "Bash(npx pm2 start:*)"
+      "Bash(npx pm2 start:*)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" setprop --name \"LDPlayer-13\" --key \"adb.debug\" --value \"1\")",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" reboot --name \"LDPlayer-13\")"
     ],
     "deny": [],
     "ask": []

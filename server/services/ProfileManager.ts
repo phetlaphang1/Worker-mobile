@@ -96,6 +96,19 @@ export class ProfileManager {
     }
   }
 
+  // Public method to reload profiles from disk (useful after deleting profiles)
+  async reloadProfiles(): Promise<void> {
+    try {
+      logger.info('Reloading profiles from disk...');
+      this.profiles.clear(); // Clear existing profiles
+      await this.loadProfiles(); // Reload from files
+      logger.info('Profiles reloaded successfully');
+    } catch (error) {
+      logger.error('Failed to reload profiles:', error);
+      throw error;
+    }
+  }
+
   // Load profiles from storage
   private async loadProfiles(): Promise<void> {
     try {
@@ -529,6 +542,354 @@ export class ProfileManager {
     for (const profile of activeProfiles) {
       await this.deactivateProfile(profile.id);
     }
+  }
+
+  /**
+   * Launch all profiles (Run All)
+   * - Launches instances only (no scripts)
+   * - Returns detailed results
+   */
+  async launchAllProfiles(options?: {
+    onlyInactive?: boolean;
+    delay?: number;
+    maxConcurrent?: number;
+  }): Promise<{
+    successCount: number;
+    failCount: number;
+    skippedCount: number;
+    results: Array<{ profileId: number; profileName: string; success: boolean; error?: string; skipped?: boolean }>;
+  }> {
+    const { onlyInactive = true, delay = 3000, maxConcurrent = 3 } = options || {};
+
+    const allProfiles = this.getAllProfiles();
+    let successCount = 0;
+    let failCount = 0;
+    let skippedCount = 0;
+    const results: Array<{ profileId: number; profileName: string; success: boolean; error?: string; skipped?: boolean }> = [];
+
+    // Filter: only launch inactive profiles if onlyInactive = true
+    const profilesToLaunch = onlyInactive
+      ? allProfiles.filter(p => p.status === 'inactive')
+      : allProfiles;
+
+    if (profilesToLaunch.length === 0) {
+      logger.info('[RUN ALL] No inactive profiles to launch');
+      return { successCount: 0, failCount: 0, skippedCount: allProfiles.length, results: [] };
+    }
+
+    logger.info(`[RUN ALL] Launching ${profilesToLaunch.length} profile(s)...`);
+
+    // Launch profiles in batches to avoid system overload
+    for (let i = 0; i < profilesToLaunch.length; i += maxConcurrent) {
+      const batch = profilesToLaunch.slice(i, i + maxConcurrent);
+
+      logger.info(`[RUN ALL] Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(profilesToLaunch.length / maxConcurrent)} (${batch.length} profiles)`);
+
+      // Launch batch concurrently
+      const batchPromises = batch.map(async (profile) => {
+        try {
+          logger.info(`[RUN ALL] Launching profile ${profile.id}: ${profile.name}`);
+
+          // Launch instance only (no scripts execution)
+          await this.launchInstanceOnly(profile.id);
+
+          successCount++;
+          results.push({ profileId: profile.id, profileName: profile.name, success: true });
+          logger.info(`[RUN ALL] ✅ Successfully launched profile ${profile.name}`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          logger.error(`[RUN ALL] ❌ Failed to launch profile ${profile.name}:`, errorMsg);
+          failCount++;
+          results.push({ profileId: profile.id, profileName: profile.name, success: false, error: errorMsg });
+        }
+      });
+
+      // Wait for current batch to complete
+      await Promise.all(batchPromises);
+
+      // Add delay before next batch (except for the last batch)
+      if (i + maxConcurrent < profilesToLaunch.length) {
+        logger.info(`[RUN ALL] Waiting ${delay}ms before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    skippedCount = allProfiles.length - profilesToLaunch.length;
+
+    logger.info(`[RUN ALL] Complete: ${successCount} launched, ${failCount} failed, ${skippedCount} skipped`);
+
+    // Broadcast status updates to all clients
+    if (this.broadcastStatus) {
+      this.broadcastStatus('profiles_run_all_complete', {
+        successCount,
+        failCount,
+        skippedCount,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Refresh all profile statuses after batch operation
+    await this.refreshAllProfileStatuses();
+
+    return { successCount, failCount, skippedCount, results };
+  }
+
+  /**
+   * Stop all profiles (Stop All)
+   * - Stops all running instances
+   * - Returns detailed results
+   */
+  async stopAllProfiles(options?: {
+    onlyActive?: boolean;
+    delay?: number;
+  }): Promise<{
+    successCount: number;
+    failCount: number;
+    skippedCount: number;
+    results: Array<{ profileId: number; profileName: string; success: boolean; error?: string; skipped?: boolean }>;
+  }> {
+    const { onlyActive = true, delay = 2000 } = options || {};
+
+    let successCount = 0;
+    let failCount = 0;
+    let skippedCount = 0;
+    const results: Array<{ profileId: number; profileName: string; success: boolean; error?: string; skipped?: boolean }> = [];
+
+    // Get ACTUAL running instances from LDPlayer (not from database status)
+    const { execSync } = await import('child_process');
+    const ldconsolePath = process.env.LDCONSOLE_PATH || 'ldconsole.exe';
+    const runningResult = execSync(`"${ldconsolePath}" runninglist`).toString();
+    const runningInstanceNames = runningResult.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && line !== '');
+
+    if (runningInstanceNames.length === 0) {
+      logger.info('[STOP ALL] No running instances to stop');
+      return { successCount: 0, failCount: 0, skippedCount: 0, results: [] };
+    }
+
+    logger.info(`[STOP ALL] Found ${runningInstanceNames.length} running instance(s): ${runningInstanceNames.join(', ')}`);
+
+    // Find profiles for these running instances
+    const allProfiles = this.getAllProfiles();
+    const profilesToStop: MobileProfile[] = [];
+    const unmatchedInstances: string[] = [];
+
+    for (const instanceName of runningInstanceNames) {
+      const profile = allProfiles.find(p => p.instanceName === instanceName);
+      if (profile) {
+        profilesToStop.push(profile);
+      } else {
+        unmatchedInstances.push(instanceName);
+      }
+    }
+
+    logger.info(`[STOP ALL] Matched ${profilesToStop.length} profiles, ${unmatchedInstances.length} unmatched instances`);
+    if (unmatchedInstances.length > 0) {
+      logger.warn(`[STOP ALL] These instances have no profile: ${unmatchedInstances.join(', ')}`);
+      logger.info(`[STOP ALL] Will stop unmatched instances directly via LDPlayer`);
+    }
+
+    logger.info(`[STOP ALL] Stopping ${profilesToStop.length} profile(s)...`);
+
+    // Stop profiles sequentially to avoid overwhelming the system
+    for (let i = 0; i < profilesToStop.length; i++) {
+      const profile = profilesToStop[i];
+
+      try {
+        logger.info(`[STOP ALL] Stopping profile ${i + 1}/${profilesToStop.length}: ${profile.name}`);
+
+        await this.deactivateProfile(profile.id);
+
+        successCount++;
+        results.push({ profileId: profile.id, profileName: profile.name, success: true });
+        logger.info(`[STOP ALL] ✅ Successfully stopped profile ${profile.name}`);
+
+        // Add delay between stops (except for the last one)
+        if (i < profilesToStop.length - 1) {
+          logger.info(`[STOP ALL] Waiting ${delay}ms before next stop...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`[STOP ALL] ❌ Failed to stop profile ${profile.name}:`, errorMsg);
+        failCount++;
+        results.push({ profileId: profile.id, profileName: profile.name, success: false, error: errorMsg });
+
+        // Continue with delay even on error to prevent race conditions
+        if (i < profilesToStop.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, Math.min(delay, 1000)));
+        }
+      }
+    }
+
+    // Stop unmatched instances directly via LDPlayer
+    for (const instanceName of unmatchedInstances) {
+      try {
+        logger.info(`[STOP ALL] Stopping unmatched instance: ${instanceName}`);
+        await this.controller.stopInstance(instanceName);
+        successCount++;
+        logger.info(`[STOP ALL] ✅ Successfully stopped unmatched instance ${instanceName}`);
+
+        if (unmatchedInstances.indexOf(instanceName) < unmatchedInstances.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`[STOP ALL] ❌ Failed to stop unmatched instance ${instanceName}:`, errorMsg);
+        failCount++;
+      }
+    }
+
+    skippedCount = 0; // No skipped since we're stopping ALL running instances
+
+    logger.info(`[STOP ALL] Complete: ${successCount} stopped, ${failCount} failed, ${skippedCount} skipped`);
+
+    // Broadcast status updates to all clients
+    if (this.broadcastStatus) {
+      this.broadcastStatus('profiles_stop_all_complete', {
+        successCount,
+        failCount,
+        skippedCount,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Refresh all profile statuses after batch operation
+    await this.refreshAllProfileStatuses();
+
+    return { successCount, failCount, skippedCount, results };
+  }
+
+  /**
+   * Run All + Execute Scripts
+   * - Launches all inactive profiles
+   * - Executes scripts on each profile after launch
+   */
+  async runAllProfilesWithScripts(options?: {
+    onlyInactive?: boolean;
+    delay?: number;
+    maxConcurrent?: number;
+  }): Promise<{
+    successCount: number;
+    failCount: number;
+    skippedCount: number;
+    scriptsExecuted: number;
+    results: Array<{
+      profileId: number;
+      profileName: string;
+      success: boolean;
+      scriptExecuted: boolean;
+      error?: string;
+      skipped?: boolean;
+    }>;
+  }> {
+    const { onlyInactive = true, delay = 3000, maxConcurrent = 3 } = options || {};
+
+    const allProfiles = this.getAllProfiles();
+    let successCount = 0;
+    let failCount = 0;
+    let skippedCount = 0;
+    let scriptsExecuted = 0;
+    const results: Array<{
+      profileId: number;
+      profileName: string;
+      success: boolean;
+      scriptExecuted: boolean;
+      error?: string;
+      skipped?: boolean;
+    }> = [];
+
+    // Filter: only launch inactive profiles if onlyInactive = true
+    const profilesToRun = onlyInactive
+      ? allProfiles.filter(p => p.status === 'inactive')
+      : allProfiles;
+
+    if (profilesToRun.length === 0) {
+      logger.info('[RUN ALL + SCRIPTS] No inactive profiles to run');
+      return { successCount: 0, failCount: 0, skippedCount: allProfiles.length, scriptsExecuted: 0, results: [] };
+    }
+
+    logger.info(`[RUN ALL + SCRIPTS] Running ${profilesToRun.length} profile(s) with scripts...`);
+
+    // Run profiles in batches to avoid system overload
+    for (let i = 0; i < profilesToRun.length; i += maxConcurrent) {
+      const batch = profilesToRun.slice(i, i + maxConcurrent);
+
+      logger.info(`[RUN ALL + SCRIPTS] Processing batch ${Math.floor(i / maxConcurrent) + 1}/${Math.ceil(profilesToRun.length / maxConcurrent)} (${batch.length} profiles)`);
+
+      // Run batch concurrently
+      const batchPromises = batch.map(async (profile) => {
+        try {
+          logger.info(`[RUN ALL + SCRIPTS] Running profile ${profile.id}: ${profile.name}`);
+
+          // Launch instance
+          await this.launchInstanceOnly(profile.id);
+
+          // Check if profile has script to execute
+          const scriptContent = profile.metadata?.scriptContent;
+          let scriptExecuted = false;
+
+          if (scriptContent && scriptContent.trim() !== '') {
+            logger.info(`[RUN ALL + SCRIPTS] Executing script for profile ${profile.name}`);
+            // Execute script (requires DirectMobileScriptService to be injected)
+            // This will be handled by the route handler
+            scriptExecuted = true;
+            scriptsExecuted++;
+          }
+
+          successCount++;
+          results.push({
+            profileId: profile.id,
+            profileName: profile.name,
+            success: true,
+            scriptExecuted
+          });
+
+          logger.info(`[RUN ALL + SCRIPTS] ✅ Successfully ran profile ${profile.name}${scriptExecuted ? ' (script queued)' : ''}`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          logger.error(`[RUN ALL + SCRIPTS] ❌ Failed to run profile ${profile.name}:`, errorMsg);
+          failCount++;
+          results.push({
+            profileId: profile.id,
+            profileName: profile.name,
+            success: false,
+            scriptExecuted: false,
+            error: errorMsg
+          });
+        }
+      });
+
+      // Wait for current batch to complete
+      await Promise.all(batchPromises);
+
+      // Add delay before next batch (except for the last batch)
+      if (i + maxConcurrent < profilesToRun.length) {
+        logger.info(`[RUN ALL + SCRIPTS] Waiting ${delay}ms before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    skippedCount = allProfiles.length - profilesToRun.length;
+
+    logger.info(`[RUN ALL + SCRIPTS] Complete: ${successCount} ran, ${failCount} failed, ${skippedCount} skipped, ${scriptsExecuted} scripts executed`);
+
+    // Broadcast status updates to all clients
+    if (this.broadcastStatus) {
+      this.broadcastStatus('profiles_run_all_scripts_complete', {
+        successCount,
+        failCount,
+        skippedCount,
+        scriptsExecuted,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Refresh all profile statuses after batch operation
+    await this.refreshAllProfileStatuses();
+
+    return { successCount, failCount, skippedCount, scriptsExecuted, results };
   }
 
   // Refresh all profile statuses from LDPlayer

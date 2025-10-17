@@ -95,7 +95,9 @@ export default function InstanceManager({
     createNewProfileMutation,
     updateScriptMutation,
     launchInstanceOnlyMutation,
-    refreshStatusMutation
+    refreshStatusMutation,
+    runAllMutation,
+    stopAllMutation
   } = useInstanceMutations();
 
 
@@ -374,6 +376,10 @@ export default function InstanceManager({
         deviceMonitorStats={deviceMonitorStats}
         onRefresh={() => refreshStatusMutation.mutate()}
         isRefreshing={refreshStatusMutation.isPending}
+        onRunAll={() => runAllMutation.mutate()}
+        onStopAll={() => stopAllMutation.mutate()}
+        isRunningAll={runAllMutation.isPending}
+        isStoppingAll={stopAllMutation.isPending}
       />
 
       {filteredAndSortedProfiles.length === 0 ? (

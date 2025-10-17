@@ -589,6 +589,67 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
+  // Launch all instances (Run All)
+  app.post('/api/instances/launch-all', async (req: Request, res: Response) => {
+    try {
+      const { onlyStopped = true, delay = 3000, maxConcurrent = 3 } = req.body;
+
+      logger.info('[API] Launch All instances requested');
+
+      // ✅ CRITICAL: Sync state BEFORE operation to get accurate starting state
+      await ldPlayerController.syncAllInstancesState();
+
+      const result = await ldPlayerController.launchAllInstances({
+        onlyStopped,
+        delay,
+        maxConcurrent
+      });
+
+      // Get fresh instances list (state already synced in launchAllInstances)
+      const instances = ldPlayerController.getInstances();
+
+      res.json({
+        success: true,
+        message: `Launched ${result.successCount} instance(s)`,
+        ...result,
+        instances // Include updated instances list
+      });
+    } catch (error) {
+      logger.error('Error launching all instances:', error);
+      res.status(500).json({ error: 'Failed to launch all instances' });
+    }
+  });
+
+  // Stop all instances (Stop All)
+  app.post('/api/instances/stop-all', async (req: Request, res: Response) => {
+    try {
+      const { onlyRunning = true, delay = 3000 } = req.body;
+
+      logger.info('[API] Stop All instances requested');
+
+      // ✅ CRITICAL: Sync state BEFORE operation to get accurate starting state
+      await ldPlayerController.syncAllInstancesState();
+
+      const result = await ldPlayerController.stopAllInstances({
+        onlyRunning,
+        delay
+      });
+
+      // Get fresh instances list (state already synced in stopAllInstances)
+      const instances = ldPlayerController.getInstances();
+
+      res.json({
+        success: true,
+        message: `Stopped ${result.successCount} instance(s)`,
+        ...result,
+        instances // Include updated instances list
+      });
+    } catch (error) {
+      logger.error('Error stopping all instances:', error);
+      res.status(500).json({ error: 'Failed to stop all instances' });
+    }
+  });
+
   // Device control routes
   app.post('/api/device/:port/tap', async (req: Request, res: Response) => {
     try {
@@ -819,6 +880,248 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error refreshing statuses:', error);
       res.status(500).json({ error: 'Failed to refresh statuses' });
+    }
+  });
+
+  // Reset all ADB connections (fix port conflicts and offline devices)
+  app.post('/api/adb/reset', async (req: Request, res: Response) => {
+    try {
+      logger.info('[API] ADB reset requested');
+
+      await ldPlayerController.resetAllADBConnections();
+
+      // Also refresh all statuses after reset
+      await Promise.all([
+        profileManager.refreshAllProfileStatuses(),
+        ldPlayerController.syncAllInstancesState()
+      ]);
+
+      res.json({ success: true, message: 'ADB connections reset successfully' });
+    } catch (error) {
+      logger.error('Error resetting ADB:', error);
+      res.status(500).json({ error: 'Failed to reset ADB connections' });
+    }
+  });
+
+  // Cleanup orphaned profiles (profiles with deleted instances)
+  app.post('/api/profiles/cleanup-orphaned', async (req: Request, res: Response) => {
+    try {
+      logger.info('[API] Cleanup orphaned profiles requested');
+
+      // Get all LDPlayer instances
+      const instances = await ldPlayerController.getAllInstancesFromLDConsole();
+      const validInstanceNames = new Set(instances.map(i => i.name));
+
+      // Get all profiles
+      const allProfiles = await profileManager.getAllProfiles();
+
+      const orphanedProfiles: any[] = [];
+      const validProfiles: any[] = [];
+
+      for (const profile of allProfiles) {
+        if (!validInstanceNames.has(profile.instanceName)) {
+          orphanedProfiles.push(profile);
+        } else {
+          validProfiles.push(profile);
+        }
+      }
+
+      res.json({
+        success: true,
+        total: allProfiles.length,
+        orphaned: orphanedProfiles.length,
+        valid: validProfiles.length,
+        orphanedProfiles: orphanedProfiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          instanceName: p.instanceName
+        })),
+        message: `Found ${orphanedProfiles.length} orphaned profile(s)`
+      });
+    } catch (error) {
+      logger.error('Error cleaning up orphaned profiles:', error);
+      res.status(500).json({ error: 'Failed to cleanup orphaned profiles' });
+    }
+  });
+
+  // Delete orphaned profiles (profiles with deleted instances)
+  app.post('/api/profiles/delete-orphaned', async (req: Request, res: Response) => {
+    try {
+      logger.info('[API] Delete orphaned profiles requested');
+
+      // Get all LDPlayer instances
+      const instances = await ldPlayerController.getAllInstancesFromLDConsole();
+      const validInstanceNames = new Set(instances.map(i => i.name));
+
+      // Get all profiles
+      const allProfiles = await profileManager.getAllProfiles();
+
+      const orphanedProfiles: any[] = [];
+      const deletedProfiles: Array<{ id: number; name: string; instanceName: string; success: boolean; error?: string }> = [];
+
+      for (const profile of allProfiles) {
+        if (!validInstanceNames.has(profile.instanceName)) {
+          orphanedProfiles.push(profile);
+        }
+      }
+
+      logger.info(`[DELETE ORPHANED] Found ${orphanedProfiles.length} orphaned profile(s) to delete`);
+
+      // Delete each orphaned profile (only the database entry, no LDPlayer instance)
+      for (const profile of orphanedProfiles) {
+        try {
+          logger.info(`[DELETE ORPHANED] Deleting profile ${profile.id}: ${profile.name} (instance: ${profile.instanceName})`);
+
+          // Use direct file deletion since instance doesn't exist
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const profilePath = path.default.join(process.cwd(), 'data', 'profiles', `${profile.id}.json`);
+          await fs.unlink(profilePath);
+
+          deletedProfiles.push({
+            id: profile.id,
+            name: profile.name,
+            instanceName: profile.instanceName,
+            success: true
+          });
+
+          logger.info(`[DELETE ORPHANED] ✅ Successfully deleted profile ${profile.id}: ${profile.name}`);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          logger.error(`[DELETE ORPHANED] ❌ Failed to delete profile ${profile.id}:`, errorMsg);
+          deletedProfiles.push({
+            id: profile.id,
+            name: profile.name,
+            instanceName: profile.instanceName,
+            success: false,
+            error: errorMsg
+          });
+        }
+      }
+
+      const successCount = deletedProfiles.filter(p => p.success).length;
+      const failCount = deletedProfiles.filter(p => !p.success).length;
+
+      logger.info(`[DELETE ORPHANED] Complete: ${successCount} deleted, ${failCount} failed`);
+
+      // Reload profiles in ProfileManager after deletion
+      await profileManager.reloadProfiles();
+      logger.info('[DELETE ORPHANED] ProfileManager reloaded successfully');
+
+      res.json({
+        success: true,
+        deletedCount: successCount,
+        failedCount: failCount,
+        deletedProfiles,
+        message: `Deleted ${successCount} orphaned profile(s)`
+      });
+    } catch (error) {
+      logger.error('Error deleting orphaned profiles:', error);
+      res.status(500).json({ error: 'Failed to delete orphaned profiles' });
+    }
+  });
+
+  // Run All Profiles (Launch instances only, no scripts)
+  app.post('/api/profiles/run-all', async (req: Request, res: Response) => {
+    try {
+      const { onlyInactive = true, delay = 3000, maxConcurrent = 3 } = req.body;
+
+      logger.info('[API] Run All profiles requested');
+
+      const result = await profileManager.launchAllProfiles({
+        onlyInactive,
+        delay,
+        maxConcurrent
+      });
+
+      res.json({
+        success: true,
+        message: `Launched ${result.successCount} profile(s)`,
+        ...result
+      });
+    } catch (error) {
+      logger.error('Error running all profiles:', error);
+      res.status(500).json({ error: 'Failed to run all profiles' });
+    }
+  });
+
+  // Stop All Profiles
+  app.post('/api/profiles/stop-all', async (req: Request, res: Response) => {
+    try {
+      const { onlyActive = true, delay = 2000 } = req.body;
+
+      logger.info('[API] Stop All profiles requested');
+
+      const result = await profileManager.stopAllProfiles({
+        onlyActive,
+        delay
+      });
+
+      res.json({
+        success: true,
+        message: `Stopped ${result.successCount} profile(s)`,
+        ...result
+      });
+    } catch (error) {
+      logger.error('Error stopping all profiles:', error);
+      res.status(500).json({ error: 'Failed to stop all profiles' });
+    }
+  });
+
+  // Run All Profiles with Scripts (Launch + Execute Scripts)
+  app.post('/api/profiles/run-all-with-scripts', async (req: Request, res: Response) => {
+    try {
+      const { onlyInactive = true, delay = 3000, maxConcurrent = 3 } = req.body;
+
+      if (!directScriptService) {
+        return res.status(500).json({ error: 'Direct Script Service not initialized' });
+      }
+
+      logger.info('[API] Run All profiles with scripts requested');
+
+      // First, launch all profiles
+      const launchResult = await profileManager.runAllProfilesWithScripts({
+        onlyInactive,
+        delay,
+        maxConcurrent
+      });
+
+      // Queue scripts for profiles that have scripts
+      const scriptTasks = [];
+      for (const result of launchResult.results) {
+        if (result.success && result.scriptExecuted) {
+          const profile = profileManager.getProfile(result.profileId);
+          if (profile?.metadata?.scriptContent) {
+            try {
+              const task = await directScriptService.queueScript(
+                profile.metadata.scriptContent,
+                profile.id
+              );
+              scriptTasks.push({
+                profileId: profile.id,
+                profileName: profile.name,
+                taskId: task.id
+              });
+            } catch (error) {
+              logger.error(`Failed to queue script for profile ${profile.name}:`, error);
+            }
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Launched ${launchResult.successCount} profile(s), executed ${scriptTasks.length} script(s)`,
+        launched: launchResult.successCount,
+        failed: launchResult.failCount,
+        skipped: launchResult.skippedCount,
+        scriptsExecuted: scriptTasks.length,
+        results: launchResult.results,
+        scriptTasks
+      });
+    } catch (error) {
+      logger.error('Error running all profiles with scripts:', error);
+      res.status(500).json({ error: 'Failed to run all profiles with scripts' });
     }
   });
 
