@@ -134,13 +134,26 @@ function ProfileSelector({ onSelectProfile }: { onSelectProfile: (profile: any) 
   );
 }
 
+// Main component - Just Visual Device Emulator
+function AutomationFlow({ selectedProfile }: { selectedProfile: any }) {
+  return (
+    <div className="h-full w-full">
+      <VisualDeviceEmulator
+        profileId={selectedProfile.id}
+        port={selectedProfile.port}
+        instanceName={selectedProfile.instanceName}
+      />
+    </div>
+  );
+}
+
 export default function AutomationBuilderMobile() {
   const [selectedProfile, setSelectedProfile] = useState<any>(null);
 
   return (
     <div className="h-full w-full bg-gray-50">
       {selectedProfile ? (
-        <div className="h-full w-full p-6">
+        <div className="h-full w-full p-6 flex flex-col">
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -157,13 +170,9 @@ export default function AutomationBuilderMobile() {
             </button>
           </div>
 
-          {/* Visual Device Emulator */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <VisualDeviceEmulator
-              profileId={selectedProfile.id}
-              port={selectedProfile.port}
-              instanceName={selectedProfile.instanceName}
-            />
+          {/* Main Content */}
+          <div className="flex-1 min-h-0 bg-white rounded-xl shadow-lg p-6">
+            <AutomationFlow selectedProfile={selectedProfile} />
           </div>
         </div>
       ) : (

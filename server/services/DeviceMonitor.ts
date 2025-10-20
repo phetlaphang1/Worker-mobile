@@ -5,6 +5,7 @@ import * as path from 'path';
 import { logger } from '../utils/logger.js';
 import { LDPlayerController, LDPlayerInstance } from '../core/LDPlayerController.js';
 import { getADBManager } from '../utils/ADBManager.js';
+import ProfileManager from './ProfileManager.js';
 
 const execAsync = promisify(exec);
 
@@ -42,6 +43,7 @@ export interface MonitoringConfig {
  */
 export class DeviceMonitor {
   private ldController: LDPlayerController;
+  private profileManager: ProfileManager | null = null;
   private config: MonitoringConfig;
   private monitorInterval: NodeJS.Timeout | null = null;
   private logcatProcesses: Map<string, ChildProcess> = new Map();
@@ -59,6 +61,14 @@ export class DeviceMonitor {
     };
 
     logger.info('[DeviceMonitor] Initialized with config:', this.config);
+  }
+
+  /**
+   * Set ProfileManager for database updates (optional)
+   */
+  setProfileManager(profileManager: ProfileManager): void {
+    this.profileManager = profileManager;
+    logger.info('[DeviceMonitor] ProfileManager attached for DB sync');
   }
 
   /**
@@ -146,22 +156,77 @@ export class DeviceMonitor {
 
         // AUTO-RECONNECT: If instance is running but ADB not connected, try to reconnect
         if (isRunning && !isAdbConnected) {
-          logger.warn(`[SYNC] Instance ${instance.name} is running but ADB not connected, reconnecting...`);
+          logger.warn(`[SYNC] Instance ${instance.name} is running but ADB not connected, initiating auto-reconnect...`);
           try {
-            await this.ldController.connectADB(instance.port);
+            // IMPORTANT: Always resolve actual port from ldconsole before reconnecting
+            let actualPort = instance.port;
+            try {
+              actualPort = await this.ldController.getAdbPortForInstance(instance.name);
+              logger.info(`[SYNC] Resolved actual ADB port for ${instance.name}: ${actualPort} (cached was: ${instance.port})`);
+
+              // Update port in status if changed
+              if (actualPort !== instance.port) {
+                logger.warn(`[SYNC] ⚠️ Port changed for ${instance.name}: ${instance.port} → ${actualPort}`);
+                status.port = actualPort;
+                instance.port = actualPort; // Update in-memory cache
+
+                // Persist port change to database if ProfileManager is available
+                if (this.profileManager) {
+                  try {
+                    const profile = this.profileManager.getAllProfiles().find(p => p.instanceName === instance.name);
+                    if (profile) {
+                      await this.profileManager.updateProfile(profile.id, { port: actualPort });
+                      logger.info(`[SYNC] ✅ Updated port in database for profile ${profile.id} (${instance.name}): ${actualPort}`);
+                    } else {
+                      logger.warn(`[SYNC] No profile found for instance ${instance.name}, cannot update DB`);
+                    }
+                  } catch (dbError) {
+                    logger.error(`[SYNC] Failed to update port in database for ${instance.name}:`, dbError);
+                  }
+                } else {
+                  logger.debug(`[SYNC] ProfileManager not available, port ${actualPort} not persisted to DB`);
+                }
+              }
+            } catch (portError) {
+              logger.warn(`[SYNC] Failed to resolve port for ${instance.name}, using cached port ${instance.port}:`, portError);
+            }
+
+            // Disconnect any stale/offline connections first
+            try {
+              const adbPath = process.env.ADB_PATH || 'D:\\LDPlayer\\LDPlayer9\\adb.exe';
+              await execAsync(`"${adbPath}" disconnect 127.0.0.1:${actualPort}`);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (disconnectError) {
+              // Ignore disconnect errors
+            }
+
+            // Try to connect with resolved port (with timeout)
+            try {
+              await Promise.race([
+                this.ldController.connectADB(actualPort),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 10000))
+              ]);
+            } catch (connectError) {
+              logger.warn(`[SYNC] First connection attempt failed, retrying once more...`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              await this.ldController.connectADB(actualPort);
+            }
+
+            // Wait a bit for connection to stabilize
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             // Verify connection after reconnect
             const recheckResult = await adbManager.execute('devices');
             const recheckPorts = this.parseAdbDevices(recheckResult.stdout);
 
-            if (recheckPorts.has(instance.port)) {
-              logger.info(`✅ [SYNC] Successfully reconnected ADB for ${instance.name} on port ${instance.port}`);
+            if (recheckPorts.has(actualPort)) {
+              logger.info(`✅ [SYNC] Successfully reconnected ADB for ${instance.name} on port ${actualPort}`);
               status.isAdbConnected = true;
             } else {
-              logger.error(`❌ [SYNC] Failed to reconnect ADB for ${instance.name} on port ${instance.port}`);
+              logger.error(`❌ [SYNC] Failed to reconnect ADB for ${instance.name} on port ${actualPort} - device not found after connection attempt`);
             }
           } catch (error) {
-            logger.error(`[SYNC] Error reconnecting ADB for ${instance.name}:`, error);
+            logger.error(`[SYNC] Error during auto-reconnect for ${instance.name}:`, error);
           }
         }
 

@@ -67,10 +67,8 @@ module.exports = {
     },
 
     // ========================================
-    // 3. Frontend Dev Server (Optional - chỉ development)
+    // 3. Frontend Dev Server (Vite on port 7000)
     // ========================================
-    // Uncomment nếu muốn PM2 quản lý cả frontend
-    /*
     {
       name: 'worker-mobile-frontend',
       script: 'npm',
@@ -79,14 +77,18 @@ module.exports = {
       instances: 1,
       autorestart: true,
       watch: false,
+      max_memory_restart: '500M',
       env: {
         NODE_ENV: 'development',
       },
       error_file: './logs/pm2/frontend-error.log',
       out_file: './logs/pm2/frontend-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      merge_logs: true,
+      min_uptime: '10s',
+      max_restarts: 10,
+      restart_delay: 4000,
     },
-    */
   ],
 
   // ========================================

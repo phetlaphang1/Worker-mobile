@@ -48,6 +48,7 @@ export interface MobileProfile {
     [key: string]: any;
   };
   status: 'active' | 'inactive' | 'suspended' | 'running';
+  canRunScript?: boolean; // Controls whether scripts can be executed on this instance
   createdAt: Date;
   lastUsed?: Date;
   metadata?: Record<string, any>;
@@ -784,7 +785,7 @@ export class ProfileManager {
       skipped?: boolean;
     }>;
   }> {
-    const { onlyInactive = true, delay = 3000, maxConcurrent = 3 } = options || {};
+    const { onlyInactive = false, delay = 2000, maxConcurrent = 1 } = options || {};  // ← CHANGED defaults
 
     const allProfiles = this.getAllProfiles();
     let successCount = 0;
@@ -806,11 +807,11 @@ export class ProfileManager {
       : allProfiles;
 
     if (profilesToRun.length === 0) {
-      logger.info('[RUN ALL + SCRIPTS] No inactive profiles to run');
+      logger.info('[RUN ALL + SCRIPTS] No profiles to run');
       return { successCount: 0, failCount: 0, skippedCount: allProfiles.length, scriptsExecuted: 0, results: [] };
     }
 
-    logger.info(`[RUN ALL + SCRIPTS] Running ${profilesToRun.length} profile(s) with scripts...`);
+    logger.info(`[RUN ALL + SCRIPTS] Running ${profilesToRun.length} profile(s) with scripts (onlyInactive: ${onlyInactive}, maxConcurrent: ${maxConcurrent})...`);
 
     // Run profiles in batches to avoid system overload
     for (let i = 0; i < profilesToRun.length; i += maxConcurrent) {
@@ -821,7 +822,18 @@ export class ProfileManager {
       // Run batch concurrently
       const batchPromises = batch.map(async (profile) => {
         try {
-          logger.info(`[RUN ALL + SCRIPTS] Running profile ${profile.id}: ${profile.name}`);
+          logger.info(`[RUN ALL + SCRIPTS] Running profile ${profile.id}: ${profile.name} (status: ${profile.status})`);
+
+          // If instance is already active/running, stop it first
+          if (profile.status === 'active' || profile.status === 'running') {
+            logger.info(`[RUN ALL + SCRIPTS] Stopping instance ${profile.name} before relaunch...`);
+            try {
+              await this.controller.stopInstance(profile.instanceName);
+              await new Promise(resolve => setTimeout(resolve, 1000));  // Wait 1s for instance to stop
+            } catch (stopError) {
+              logger.warn(`[RUN ALL + SCRIPTS] Failed to stop instance ${profile.name}, will try to launch anyway:`, stopError);
+            }
+          }
 
           // Launch instance
           await this.launchInstanceOnly(profile.id);
@@ -975,6 +987,24 @@ export class ProfileManager {
 
       // Create profile object from cloned instance
       // Deep clone all configurations to ensure the new profile is completely independent
+      // IMPORTANT: Clear scriptContent to prevent clones from running the same script
+      const clonedMetadata = originalProfile.metadata ? JSON.parse(JSON.stringify(originalProfile.metadata)) : {};
+
+      // Remove script-related data so clones don't inherit automation scripts
+      if (clonedMetadata.scriptContent) {
+        logger.info(`Clearing scriptContent from cloned profile to prevent script conflicts`);
+        delete clonedMetadata.scriptContent;
+      }
+      if (clonedMetadata.lastLog) {
+        delete clonedMetadata.lastLog;
+      }
+      if (clonedMetadata.lastExecution) {
+        delete clonedMetadata.lastExecution;
+      }
+      if (clonedMetadata.executionHistory) {
+        clonedMetadata.executionHistory = []; // Clear execution history
+      }
+
       clonedProfile = {
         id: newProfileId,
         name: newName,
@@ -987,7 +1017,7 @@ export class ProfileManager {
         apps: originalProfile.apps ? JSON.parse(JSON.stringify(originalProfile.apps)) : {},
         status: 'inactive',
         createdAt: new Date(),
-        metadata: originalProfile.metadata ? JSON.parse(JSON.stringify(originalProfile.metadata)) : {}
+        metadata: clonedMetadata
       };
 
       // Register instance in controller

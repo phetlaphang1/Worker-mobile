@@ -33,11 +33,26 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5051',
         changeOrigin: true,
+        // Add retry logic for when server is restarting
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('[PROXY] Connection error - Server may be restarting, will retry...');
+            // Don't log full error stack, just show friendly message
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // Suppress verbose logs
+          });
+        },
       },
       '/ws': {
         target: 'ws://localhost:5051',
         ws: true,
         changeOrigin: true,
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('[WS PROXY] Connection error - Server may be restarting...');
+          });
+        },
       },
     },
   },

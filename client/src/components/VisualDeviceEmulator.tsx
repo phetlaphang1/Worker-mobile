@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Square, Trash2, Save, MousePointer, Hand, Type, Clock, Camera, FileCode, MessageSquare, Timer, MousePointer2, ArrowUpDown, ChevronLeft, Home as HomeIcon, AppWindow } from 'lucide-react';
+import { Play, Square, Trash2, Save, MousePointer, Hand, Type, Clock, Camera, FileCode, MessageSquare, Timer, MousePointer2, ArrowUpDown, ChevronLeft, Home as HomeIcon, AppWindow, Settings, X, Copy, Download, Clipboard, ArrowDown, ArrowUp } from 'lucide-react';
 
 interface Action {
   id: string;
@@ -8,6 +8,11 @@ interface Action {
   y?: number;
   endX?: number;
   endY?: number;
+  // Relative coordinates (percentage) for cross-device compatibility
+  xPercent?: number;
+  yPercent?: number;
+  endXPercent?: number;
+  endYPercent?: number;
   text?: string;
   duration?: number;
   timestamp: number;
@@ -16,6 +21,13 @@ interface Action {
   scrollDirection?: 'up' | 'down';
   appPackage?: string;
   appName?: string;
+  // Config for type action
+  textSource?: 'manual' | 'account'; // Where to get text from
+  accountField?: 'username' | 'password'; // Which field from account
+  // Config for wait action
+  waitType?: 'time' | 'element'; // Wait by time or wait for element
+  waitElementText?: string; // Text of element to wait for
+  waitTimeout?: number; // Max timeout for waiting element (ms)
 }
 
 interface VisualDeviceEmulatorProps {
@@ -42,14 +54,46 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
 }) => {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [actions, setActions] = useState<Action[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingId, setRecordingId] = useState<string | null>(null);
-  const [selectedTool, setSelectedTool] = useState<'click' | 'swipe' | 'type' | 'wait' | 'tapByText' | 'longPress' | 'doubleTap' | 'scroll'>('click');
+  const [selectedTool, setSelectedTool] = useState<'click' | 'swipe' | 'type' | 'wait' | 'tapByText' | 'longPress' | 'doubleTap' | 'scroll' | 'scrollCustom'>('click');
   const [swipeStart, setSwipeStart] = useState<{ x: number; y: number } | null>(null);
   const [showCoordinates, setShowCoordinates] = useState(true);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [deviceResolution, setDeviceResolution] = useState({ width: 360, height: 640 });
+  const [selectedAction, setSelectedAction] = useState<Action | null>(null);
+  const [profileData, setProfileData] = useState<any>(null);
+  const [isPickingElement, setIsPickingElement] = useState(false); // For element picking mode
+  const [savedScripts, setSavedScripts] = useState<Array<{
+    name: string;
+    actions: Action[];
+    createdAt: string;
+  }>>([]); // Saved scripts with localStorage persistence
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Load saved scripts from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('visualRecorder_savedScripts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setSavedScripts(parsed);
+        console.log('[VisualRecorder] Loaded', parsed.length, 'saved scripts from localStorage');
+      }
+    } catch (error) {
+      console.error('[VisualRecorder] Failed to load saved scripts:', error);
+    }
+  }, []);
+
+  // Auto-save scripts to localStorage whenever they change
+  useEffect(() => {
+    if (savedScripts.length > 0) {
+      try {
+        localStorage.setItem('visualRecorder_savedScripts', JSON.stringify(savedScripts));
+        console.log('[VisualRecorder] Auto-saved', savedScripts.length, 'scripts to localStorage');
+      } catch (error) {
+        console.error('[VisualRecorder] Failed to save scripts:', error);
+      }
+    }
+  }, [savedScripts]);
 
   // Device dimensions - dynamically fetched from actual device
   const DEVICE_WIDTH = deviceResolution.width;
@@ -121,47 +165,47 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     }
   };
 
-  // Start recording
-  const startRecording = async () => {
+  // Handle element picking for Wait for Element
+  const pickElementAtPosition = async (x: number, y: number) => {
+    if (!selectedAction || selectedAction.type !== 'wait' || selectedAction.waitType !== 'element') {
+      return;
+    }
+
     try {
-      const response = await fetch('/api/actions/start-recording', {
+      console.log(`[ElementPicker] Picking element at (${x}, ${y})`);
+
+      const response = await fetch(`/api/inspector/${profileId}/xpath`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scriptName: `Script_${Date.now()}`,
-          options: {
-            description: 'Visual automation script',
-            profileId,
-            appPackage: 'auto-generated'
-          }
-        })
+        body: JSON.stringify({ x, y })
       });
-      const data = await response.json();
-      if (data.success) {
-        setRecordingId(data.scriptId);
-        setIsRecording(true);
-        setActions([]);
-        // Capture initial screenshot
-        await captureScreenshot();
-      }
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-    }
-  };
 
-  // Stop recording
-  const stopRecording = async () => {
-    try {
-      const response = await fetch('/api/actions/stop-recording', {
-        method: 'POST'
-      });
       const data = await response.json();
-      if (data.success) {
-        setIsRecording(false);
-        alert(`Script saved! ID: ${data.script.id}\nActions: ${data.script.actions.length}`);
+
+      if (data.success && data.element) {
+        const elementText = data.element.text || data.element.contentDesc || '';
+
+        if (elementText) {
+          console.log(`[ElementPicker] Found element with text: "${elementText}"`);
+
+          // Update the action with the detected element text
+          updateActionConfig(selectedAction.id, {
+            waitElementText: elementText
+          });
+
+          // Exit picking mode
+          setIsPickingElement(false);
+
+          alert(`✅ Element detected: "${elementText}"`);
+        } else {
+          alert('⚠️ Element has no text. Please pick an element with visible text or description.');
+        }
+      } else {
+        alert('❌ No element found at this position. Try clicking on a button or text.');
       }
     } catch (error) {
-      console.error('Failed to stop recording:', error);
+      console.error('[ElementPicker] Failed to detect element:', error);
+      alert('❌ Failed to detect element. Make sure the profile is running.');
     }
   };
 
@@ -171,13 +215,21 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     const x = Math.round((e.clientX - rect.left) / SCALE);
     const y = Math.round((e.clientY - rect.top) / SCALE);
 
+    // If in element picking mode, detect element instead of creating action
+    if (isPickingElement) {
+      await pickElementAtPosition(x, y);
+      return;
+    }
+
     if (selectedTool === 'click') {
-      // Record click
+      // Record click with both absolute and relative coordinates
       const action: Action = {
         id: `action_${Date.now()}`,
         type: 'click',
         x,
         y,
+        xPercent: (x / DEVICE_WIDTH) * 100,
+        yPercent: (y / DEVICE_HEIGHT) * 100,
         timestamp: Date.now()
       };
       setActions([...actions, action]);
@@ -215,7 +267,7 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
         // Start of swipe
         setSwipeStart({ x, y });
       } else {
-        // End of swipe
+        // End of swipe with relative coordinates
         const action: Action = {
           id: `action_${Date.now()}`,
           type: 'swipe',
@@ -223,6 +275,10 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
           y: swipeStart.y,
           endX: x,
           endY: y,
+          xPercent: (swipeStart.x / DEVICE_WIDTH) * 100,
+          yPercent: (swipeStart.y / DEVICE_HEIGHT) * 100,
+          endXPercent: (x / DEVICE_WIDTH) * 100,
+          endYPercent: (y / DEVICE_HEIGHT) * 100,
           timestamp: Date.now()
         };
         setActions([...actions, action]);
@@ -257,46 +313,49 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
         }
       }
     } else if (selectedTool === 'type') {
-      // Prompt for text input
-      const text = prompt('Enter text to type:');
-      if (text) {
-        const action: Action = {
-          id: `action_${Date.now()}`,
+      // Create type action with relative coordinates
+      const action: Action = {
+        id: `action_${Date.now()}`,
+        type: 'type',
+        x,
+        y,
+        xPercent: (x / DEVICE_WIDTH) * 100,
+        yPercent: (y / DEVICE_HEIGHT) * 100,
+        text: '', // Empty text - will be configured in sidebar
+        textSource: 'manual', // Default to manual
+        timestamp: Date.now()
+      };
+      setActions([...actions, action]);
+
+      // Auto-select this action to open sidebar
+      setSelectedAction(action);
+
+      // Create node in ReactFlow if callback provided
+      if (onCreateNode) {
+        onCreateNode({
           type: 'type',
-          x,
-          y,
-          text,
-          timestamp: Date.now()
-        };
-        setActions([...actions, action]);
+          coordinates: { x, y },
+          text: ''
+        });
+      }
 
-        // Create node in ReactFlow if callback provided
-        if (onCreateNode) {
-          onCreateNode({
-            type: 'type',
-            coordinates: { x, y },
-            text
+      // Send to backend if recording
+      if (isRecording) {
+        try {
+          await fetch('/api/actions/record-type', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              port,
+              selector: {
+                type: 'coordinates',
+                value: { x, y }
+              },
+              text: ''
+            })
           });
-        }
-
-        // Send to backend if recording
-        if (isRecording) {
-          try {
-            await fetch('/api/actions/record-type', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                port,
-                selector: {
-                  type: 'coordinates',
-                  value: { x, y }
-                },
-                text
-              })
-            });
-          } catch (error) {
-            console.error('Failed to record type:', error);
-          }
+        } catch (error) {
+          console.error('Failed to record type:', error);
         }
       }
     } else if (selectedTool === 'tapByText') {
@@ -343,35 +402,52 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
         timestamp: Date.now()
       };
       setActions([...actions, action]);
+    } else if (selectedTool === 'scrollCustom') {
+      // Custom scroll - draw swipe gesture on screen
+      if (!swipeStart) {
+        // Start of scroll gesture
+        setSwipeStart({ x, y });
+      } else {
+        // End of scroll gesture - create swipe action
+        const action: Action = {
+          id: `action_${Date.now()}`,
+          type: 'swipe',
+          x: swipeStart.x,
+          y: swipeStart.y,
+          endX: x,
+          endY: y,
+          xPercent: (swipeStart.x / DEVICE_WIDTH) * 100,
+          yPercent: (swipeStart.y / DEVICE_HEIGHT) * 100,
+          endXPercent: (x / DEVICE_WIDTH) * 100,
+          endYPercent: (y / DEVICE_HEIGHT) * 100,
+          timestamp: Date.now()
+        };
+        setActions([...actions, action]);
+        setSwipeStart(null);
+      }
     }
   };
 
   // Add wait action
   const addWaitAction = () => {
-    const duration = parseInt(prompt('Wait duration (ms):', '1000') || '1000');
     const action: Action = {
       id: `action_${Date.now()}`,
       type: 'wait',
-      duration,
+      waitType: 'time', // Default to wait by time
+      duration: 1000, // Default 1 second
       timestamp: Date.now()
     };
     setActions([...actions, action]);
+
+    // Auto-select to open sidebar for configuration
+    setSelectedAction(action);
 
     // Create node in ReactFlow if callback provided
     if (onCreateNode) {
       onCreateNode({
         type: 'wait',
-        duration
+        duration: 1000
       });
-    }
-
-    // Send to backend if recording
-    if (isRecording) {
-      fetch('/api/actions/record-wait', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duration })
-      }).catch(console.error);
     }
   };
 
@@ -421,6 +497,17 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     }
   };
 
+  // Add scroll action with specific direction
+  const addScrollAction = (direction: 'up' | 'down') => {
+    const action: Action = {
+      id: `action_${Date.now()}`,
+      type: 'scroll',
+      scrollDirection: direction,
+      timestamp: Date.now()
+    };
+    setActions([...actions, action]);
+  };
+
   // Delete action
   const deleteAction = (id: string) => {
     setActions(actions.filter(a => a.id !== id));
@@ -433,39 +520,53 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     }
   };
 
-  // Export actions to JavaScript code
-  const exportToScript = () => {
-    if (actions.length === 0) {
-      alert('No actions to export!');
-      return;
-    }
-
+  // Generate script from actions
+  const generateScript = () => {
     let script = `// Auto-generated mobile automation script\n`;
     script += `// Device: ${instanceName}\n`;
-    script += `// Resolution: ${DEVICE_WIDTH}x${DEVICE_HEIGHT}\n`;
-    script += `// Generated: ${new Date().toLocaleString()}\n\n`;
+    script += `// Base Resolution: ${DEVICE_WIDTH}x${DEVICE_HEIGHT}\n`;
+    script += `// Generated: ${new Date().toLocaleString()}\n`;
+    script += `// NOTE: Uses relative coordinates (%) for cross-device compatibility\n\n`;
     script += `async function automationScript() {\n`;
     script += `  try {\n`;
+    script += `    // Get current device screen size\n`;
+    script += `    const screenSize = await helpers.getScreenSize();\n`;
+    script += `    log(\`Device resolution: \${screenSize.width}x\${screenSize.height}\`);\n\n`;
 
     actions.forEach((action, index) => {
       script += `    // Step ${index + 1}: ${action.type}\n`;
 
-      if (action.type === 'click' && action.x && action.y) {
-        script += `    await helpers.tap(${action.x}, ${action.y});\n`;
-        script += `    log('Tapped at (${action.x}, ${action.y})');\n`;
-      } else if (action.type === 'swipe' && action.x && action.y && action.endX && action.endY) {
-        script += `    await helpers.swipe(${action.x}, ${action.y}, ${action.endX}, ${action.endY}, 300);\n`;
-        script += `    log('Swiped from (${action.x}, ${action.y}) to (${action.endX}, ${action.endY})');\n`;
-      } else if (action.type === 'type' && action.text) {
-        if (action.x && action.y) {
-          script += `    await helpers.tap(${action.x}, ${action.y});\n`;
+      if (action.type === 'click' && action.xPercent !== undefined && action.yPercent !== undefined) {
+        // Add base resolution for aspect ratio compensation
+        script += `    await helpers.tapRel(${action.xPercent.toFixed(2)}, ${action.yPercent.toFixed(2)}, { baseWidth: ${DEVICE_WIDTH}, baseHeight: ${DEVICE_HEIGHT} });\n`;
+        script += `    log('Tapped at ${action.xPercent.toFixed(1)}%, ${action.yPercent.toFixed(1)}%');\n`;
+      } else if (action.type === 'swipe' && action.xPercent !== undefined && action.yPercent !== undefined && action.endXPercent !== undefined && action.endYPercent !== undefined) {
+        script += `    await helpers.swipeRel(${action.xPercent.toFixed(2)}, ${action.yPercent.toFixed(2)}, ${action.endXPercent.toFixed(2)}, ${action.endYPercent.toFixed(2)}, 300);\n`;
+        script += `    log('Swiped from ${action.xPercent.toFixed(1)}%, ${action.yPercent.toFixed(1)}% to ${action.endXPercent.toFixed(1)}%, ${action.endYPercent.toFixed(1)}%');\n`;
+      } else if (action.type === 'type') {
+        if (action.xPercent !== undefined && action.yPercent !== undefined) {
+          // Add base resolution for aspect ratio compensation
+          script += `    await helpers.tapRel(${action.xPercent.toFixed(2)}, ${action.yPercent.toFixed(2)}, { baseWidth: ${DEVICE_WIDTH}, baseHeight: ${DEVICE_HEIGHT} });\n`;
           script += `    await helpers.sleep(500);\n`;
         }
-        script += `    await helpers.type("${action.text.replace(/"/g, '\\"')}");\n`;
-        script += `    log('Typed: "${action.text}');\n`;
-      } else if (action.type === 'wait' && action.duration) {
-        script += `    await helpers.sleep(${action.duration});\n`;
-        script += `    log('Waited ${action.duration}ms');\n`;
+
+        // Handle text from account or manual input
+        if (action.textSource === 'account' && action.accountField) {
+          // Access accounts from profile.metadata.accounts.x (Twitter/X app)
+          script += `    await helpers.type(profile.metadata?.accounts?.x?.${action.accountField} || '');\n`;
+          script += `    log('Typed from account: ${action.accountField}');\n`;
+        } else if (action.text) {
+          script += `    await helpers.type("${action.text.replace(/"/g, '\\"')}");\n`;
+          script += `    log('Typed: "${action.text}');\n`;
+        }
+      } else if (action.type === 'wait') {
+        if (action.waitType === 'element' && action.waitElementText) {
+          script += `    await helpers.waitForText("${action.waitElementText.replace(/"/g, '\\"')}", { timeout: ${action.waitTimeout || 10000} });\n`;
+          script += `    log('Waited for element: "${action.waitElementText.replace(/"/g, '\\"')}');\n`;
+        } else if (action.duration) {
+          script += `    await helpers.sleep(${action.duration});\n`;
+          script += `    log('Waited ${action.duration}ms');\n`;
+        }
       } else if (action.type === 'tapByText' && action.tapText) {
         script += `    await helpers.tapByText("${action.tapText.replace(/"/g, '\\"')}", { partialMatch: true, caseSensitive: false });\n`;
         script += `    log('Tapped on text: "${action.tapText}');\n`;
@@ -508,19 +609,108 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     script += `// Execute the automation\n`;
     script += `await automationScript();\n`;
 
-    // Copy to clipboard and download
-    navigator.clipboard.writeText(script).then(() => {
-      alert('✅ Script exported to clipboard!\n\nYou can also download it as a file.');
+    return script;
+  };
 
-      // Download as file
-      const blob = new Blob([script], { type: 'text/javascript' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `automation_${Date.now()}.js`;
-      a.click();
-      URL.revokeObjectURL(url);
+  // Copy script to clipboard
+  const copyScriptToClipboard = () => {
+    if (actions.length === 0) {
+      alert('❌ No actions to copy!');
+      return;
+    }
+
+    const script = generateScript();
+    navigator.clipboard.writeText(script).then(() => {
+      alert('✅ Script copied to clipboard!');
+    }).catch(err => {
+      alert('❌ Failed to copy to clipboard: ' + err.message);
     });
+  };
+
+  // Save script to file
+  const saveScriptToFile = () => {
+    if (actions.length === 0) {
+      alert('❌ No actions to save!');
+      return;
+    }
+
+    const script = generateScript();
+    const blob = new Blob([script], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `automation_${Date.now()}.js`;
+    a.click();
+    URL.revokeObjectURL(url);
+    alert('✅ Script saved to file!');
+  };
+
+  // Save script to memory (temporary storage)
+  const saveScriptToMemory = () => {
+    if (actions.length === 0) {
+      alert('❌ No actions to save!');
+      return;
+    }
+
+    const scriptName = prompt('Enter script name:', `Script_${new Date().toLocaleTimeString()}`);
+    if (!scriptName) return;
+
+    // Save to state (memory only)
+    const scriptData = {
+      name: scriptName,
+      actions: [...actions], // Clone actions array
+      createdAt: new Date().toISOString()
+    };
+
+    setSavedScripts([...savedScripts, scriptData]);
+    alert(`✅ Script "${scriptName}" saved to memory!\n\nTotal saved: ${savedScripts.length + 1}`);
+  };
+
+  // Load script from memory
+  const loadScriptFromMemory = () => {
+    if (savedScripts.length === 0) {
+      alert('❌ No saved scripts in memory!');
+      return;
+    }
+
+    // Show list of saved scripts
+    const scriptList = savedScripts.map((s, i) =>
+      `${i + 1}. ${s.name} (${new Date(s.createdAt).toLocaleTimeString()}) - ${s.actions?.length || 0} actions`
+    ).join('\n');
+
+    const selection = prompt(`Select script to load:\n\n${scriptList}\n\nEnter number:`);
+    if (!selection) return;
+
+    const index = parseInt(selection) - 1;
+    if (index < 0 || index >= savedScripts.length) {
+      alert('❌ Invalid selection!');
+      return;
+    }
+
+    const selectedScript = savedScripts[index];
+
+    if (actions.length > 0) {
+      if (!confirm(`Load script "${selectedScript.name}"?\n\nThis will replace current actions (${actions.length} actions).`)) {
+        return;
+      }
+    }
+
+    setActions([...selectedScript.actions]); // Clone to avoid reference issues
+    alert(`✅ Script "${selectedScript.name}" loaded! (${selectedScript.actions?.length || 0} actions)`);
+  };
+
+  // Clear all saved scripts from localStorage
+  const clearAllSavedScripts = () => {
+    if (savedScripts.length === 0) {
+      alert('❌ No saved scripts to clear!');
+      return;
+    }
+
+    if (confirm(`⚠️ Delete ALL ${savedScripts.length} saved scripts from localStorage?\n\nThis cannot be undone!`)) {
+      setSavedScripts([]);
+      localStorage.removeItem('visualRecorder_savedScripts');
+      alert('✅ All saved scripts cleared!');
+    }
   };
 
   // Track mouse position
@@ -531,18 +721,44 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     setMousePos({ x, y });
   };
 
+  // Fetch profile data with accounts
+  const fetchProfileData = async () => {
+    try {
+      const response = await fetch(`/api/profiles/${profileId}`);
+      const data = await response.json();
+      setProfileData(data);
+      console.log('[VisualRecorder] Profile data loaded:', data);
+    } catch (error) {
+      console.error('[VisualRecorder] Failed to fetch profile data:', error);
+    }
+  };
+
+  // Update action config
+  const updateActionConfig = (actionId: string, updates: Partial<Action>) => {
+    const updatedActions = actions.map(action =>
+      action.id === actionId ? { ...action, ...updates } : action
+    );
+    setActions(updatedActions);
+
+    // Also update selectedAction if it's the one being modified
+    if (selectedAction && selectedAction.id === actionId) {
+      setSelectedAction({ ...selectedAction, ...updates });
+    }
+
+    console.log('[VisualRecorder] Updated action:', actionId, updates);
+  };
+
   // Fetch device info and screenshot on mount
   useEffect(() => {
     fetchDeviceResolution();
+    fetchProfileData();
     captureScreenshot();
-    // Auto-refresh every 5 seconds if not recording
+    // Auto-refresh every 5 seconds
     const interval = setInterval(() => {
-      if (!isRecording) {
-        captureScreenshot();
-      }
+      captureScreenshot();
     }, 5000);
     return () => clearInterval(interval);
-  }, [profileId, isRecording]);
+  }, [profileId]);
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 w-full">
@@ -558,7 +774,9 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
           {/* Device Screen */}
           <div
             ref={canvasRef}
-            className="relative bg-white cursor-crosshair overflow-hidden"
+            className={`relative bg-white overflow-hidden ${
+              isPickingElement ? 'cursor-pointer border-4 border-orange-500' : 'cursor-crosshair'
+            }`}
             style={{
               width: DEVICE_WIDTH * SCALE,
               height: DEVICE_HEIGHT * SCALE
@@ -674,6 +892,15 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
             >
               ({mousePos.x}, {mousePos.y})
             </div>
+
+            {/* Element Picking Overlay */}
+            {isPickingElement && (
+              <div className="absolute inset-0 bg-orange-500 bg-opacity-20 pointer-events-none flex items-center justify-center">
+                <div className="bg-orange-500 text-white px-4 py-2 rounded-lg shadow-lg font-bold text-sm animate-bounce">
+                  🎯 Click on element to detect
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Device Footer */}
@@ -696,34 +923,44 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
         {/* Info Hint */}
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-800">
-            <strong>Tip:</strong> Click on screen to create node. Settings Panel will appear on the right to edit config.
+            <strong>Tip:</strong> Click on the device screen to create actions. Click on any action in the list below to configure it in the sidebar.
           </p>
         </div>
 
-        {/* Recording Controls */}
+        {/* Action Controls */}
         <div className="bg-white rounded-lg p-4 shadow">
-          <h3 className="font-semibold mb-3">Recording Controls</h3>
+          <h3 className="font-semibold mb-3">Action Controls</h3>
           <div className="flex flex-wrap gap-2">
-            {!isRecording ? (
-              <button
-                onClick={startRecording}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-              >
-                <Play size={16} /> Start Recording
-              </button>
-            ) : (
-              <button
-                onClick={stopRecording}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
-              >
-                <Square size={16} /> Stop Recording
-              </button>
-            )}
             <button
-              onClick={captureScreenshot}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              onClick={saveScriptToMemory}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 font-medium"
+              disabled={actions.length === 0}
+              title="Save script to temporary memory (session only)"
             >
-              <Camera size={16} /> Refresh
+              <Save size={16} /> Save Temp
+            </button>
+            <button
+              onClick={loadScriptFromMemory}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600"
+              title="Load previously saved script from memory"
+            >
+              <FileCode size={16} /> Load Temp
+            </button>
+            <button
+              onClick={copyScriptToClipboard}
+              className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              disabled={actions.length === 0}
+              title="Copy generated script to clipboard"
+            >
+              <Copy size={16} /> Copy
+            </button>
+            <button
+              onClick={saveScriptToFile}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              disabled={actions.length === 0}
+              title="Download script as .js file"
+            >
+              <Download size={16} /> Download
             </button>
             <button
               onClick={clearActions}
@@ -732,19 +969,21 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
             >
               <Trash2 size={16} /> Clear
             </button>
-            <button
-              onClick={exportToScript}
-              className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-              disabled={actions.length === 0}
-            >
-              <FileCode size={16} /> Export to Script
-            </button>
           </div>
-          {isRecording && (
-            <div className="mt-2 text-sm text-red-600 font-semibold animate-pulse">
-              Recording... ({actions.length} actions)
-            </div>
-          )}
+          <div className="mt-3 flex items-center justify-between">
+            {actions.length > 0 ? (
+              <div className="text-sm text-green-600 font-medium">
+                {actions.length} action{actions.length > 1 ? 's' : ''} recorded
+              </div>
+            ) : (
+              <div className="text-sm text-gray-400">No actions recorded</div>
+            )}
+            {savedScripts.length > 0 && (
+              <div className="text-xs text-purple-600 font-medium">
+                📦 {savedScripts.length} saved in memory
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Tool Selection */}
@@ -809,10 +1048,11 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
               <Clock size={16} /> Wait
             </button>
             <button
-              onClick={() => setSelectedTool('scroll')}
+              onClick={() => setSelectedTool('scrollCustom')}
               className={`flex items-center gap-2 px-3 py-2 rounded text-sm ${
-                selectedTool === 'scroll' ? 'bg-blue-500 text-white' : 'bg-gray-100 hover:bg-gray-200'
+                selectedTool === 'scrollCustom' ? 'bg-blue-500 text-white' : 'bg-cyan-100 hover:bg-cyan-200'
               }`}
+              title="Draw scroll gesture on device"
             >
               <ArrowUpDown size={16} /> Scroll
             </button>
@@ -860,7 +1100,12 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
             {actions.map((action, index) => (
               <div
                 key={action.id}
-                className="flex items-center justify-between p-2 bg-gray-50 rounded border"
+                className={`flex items-center justify-between p-2 rounded border cursor-pointer transition-all ${
+                  selectedAction?.id === action.id
+                    ? 'bg-blue-50 border-blue-400 shadow-md'
+                    : 'bg-gray-50 hover:bg-gray-100 border-gray-200'
+                }`}
+                onClick={() => setSelectedAction(action)}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-mono text-gray-500">#{index + 1}</span>
@@ -870,7 +1115,11 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
                       {action.type === 'click' && `at (${action.x}, ${action.y})`}
                       {action.type === 'swipe' && `(${action.x}, ${action.y}) → (${action.endX}, ${action.endY})`}
                       {action.type === 'type' && `"${action.text}" at (${action.x}, ${action.y})`}
-                      {action.type === 'wait' && `${action.duration}ms`}
+                      {action.type === 'wait' && (
+                        action.waitType === 'element'
+                          ? `for element: "${action.waitElementText}" (max: ${action.waitTimeout || 10000}ms)`
+                          : `${action.duration}ms`
+                      )}
                       {action.type === 'tapByText' && `"${action.tapText}"`}
                       {action.type === 'longPress' && `at (${action.x}, ${action.y}) for ${action.duration}ms`}
                       {action.type === 'doubleTap' && `at (${action.x}, ${action.y})`}
@@ -883,7 +1132,10 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
                   </div>
                 </div>
                 <button
-                  onClick={() => deleteAction(action.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteAction(action.id);
+                  }}
                   className="text-red-500 hover:text-red-700"
                 >
                   <Trash2 size={16} />
@@ -898,6 +1150,334 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Action Settings Sidebar - RIGHT */}
+      {selectedAction && !selectedNodeData && (
+        <div className="w-full lg:w-80 bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col max-h-[700px]">
+          <div className="p-4 border-b bg-gradient-to-r from-green-500 to-teal-500 rounded-t-xl flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-white text-lg">Action Settings</h3>
+              <p className="text-xs text-white/80 mt-1 capitalize">{selectedAction.type} Action</p>
+            </div>
+            <button
+              onClick={() => setSelectedAction(null)}
+              className="text-white hover:bg-white/20 rounded p-1 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Common Fields for Click, LongPress, DoubleTap */}
+            {['click', 'longPress', 'doubleTap'].includes(selectedAction.type) && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Coordinate X</label>
+                  <input
+                    type="number"
+                    value={selectedAction.x || 0}
+                    onChange={(e) => updateActionConfig(selectedAction.id, { x: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Coordinate Y</label>
+                  <input
+                    type="number"
+                    value={selectedAction.y || 0}
+                    onChange={(e) => updateActionConfig(selectedAction.id, { y: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Duration for LongPress */}
+            {selectedAction.type === 'longPress' && (
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Duration (ms)</label>
+                <input
+                  type="number"
+                  value={selectedAction.duration || 1000}
+                  onChange={(e) => updateActionConfig(selectedAction.id, { duration: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+            )}
+
+            {/* Swipe coordinates */}
+            {selectedAction.type === 'swipe' && (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">Start X</label>
+                    <input
+                      type="number"
+                      value={selectedAction.x || 0}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { x: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">Start Y</label>
+                    <input
+                      type="number"
+                      value={selectedAction.y || 0}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { y: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">End X</label>
+                    <input
+                      type="number"
+                      value={selectedAction.endX || 0}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { endX: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">End Y</label>
+                    <input
+                      type="number"
+                      value={selectedAction.endY || 0}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { endY: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Type action with account integration */}
+            {selectedAction.type === 'type' && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Text Source</label>
+                  <select
+                    value={selectedAction.textSource || 'manual'}
+                    onChange={(e) => updateActionConfig(selectedAction.id, {
+                      textSource: e.target.value as 'manual' | 'account',
+                      // Clear text if switching to account
+                      ...(e.target.value === 'account' ? { text: '' } : {})
+                    })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="manual">Manual Input</option>
+                    <option value="account">From Account</option>
+                  </select>
+                </div>
+
+                {selectedAction.textSource === 'account' ? (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 block mb-1">Account Field</label>
+                      <select
+                        value={selectedAction.accountField || 'username'}
+                        onChange={(e) => updateActionConfig(selectedAction.id, {
+                          accountField: e.target.value as 'username' | 'password'
+                        })}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      >
+                        <option value="username">Username</option>
+                        <option value="password">Password</option>
+                      </select>
+                    </div>
+                    {profileData?.metadata?.accounts?.x && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-xs font-medium text-blue-800 mb-1">Preview (X/Twitter Account):</p>
+                        <p className="text-sm text-blue-900">
+                          {selectedAction.accountField === 'username'
+                            ? profileData.metadata.accounts.x.username || '(not set)'
+                            : profileData.metadata.accounts.x.password || '(not set)'}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">Text to Type</label>
+                    <textarea
+                      value={selectedAction.text || ''}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { text: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="Enter text to type..."
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">Field X</label>
+                    <input
+                      type="number"
+                      value={selectedAction.x || 0}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { x: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">Field Y</label>
+                    <input
+                      type="number"
+                      value={selectedAction.y || 0}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { y: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Wait action */}
+            {selectedAction.type === 'wait' && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Wait Type</label>
+                  <select
+                    value={selectedAction.waitType || 'time'}
+                    onChange={(e) => updateActionConfig(selectedAction.id, {
+                      waitType: e.target.value as 'time' | 'element'
+                    })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="time">Wait by Time</option>
+                    <option value="element">Wait for Element</option>
+                  </select>
+                </div>
+
+                {selectedAction.waitType === 'time' ? (
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 block mb-1">Duration (ms)</label>
+                    <input
+                      type="number"
+                      value={selectedAction.duration || 1000}
+                      onChange={(e) => updateActionConfig(selectedAction.id, { duration: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 block mb-1">Element Text</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={selectedAction.waitElementText || ''}
+                          onChange={(e) => updateActionConfig(selectedAction.id, { waitElementText: e.target.value })}
+                          className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="e.g., Welcome, Login button"
+                        />
+                        <button
+                          onClick={() => setIsPickingElement(true)}
+                          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                            isPickingElement
+                              ? 'bg-orange-500 text-white animate-pulse'
+                              : 'bg-blue-500 text-white hover:bg-blue-600'
+                          }`}
+                          title="Click on device screen to detect element"
+                        >
+                          {isPickingElement ? '👆 Click Element' : '🎯 Pick'}
+                        </button>
+                      </div>
+                      {isPickingElement && (
+                        <p className="text-xs text-orange-600 mt-1 font-medium">
+                          👆 Click on an element on the device screen to detect its text
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 block mb-1">Max Timeout (ms)</label>
+                      <input
+                        type="number"
+                        value={selectedAction.waitTimeout || 10000}
+                        onChange={(e) => updateActionConfig(selectedAction.id, { waitTimeout: Number(e.target.value) })}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="10000"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Maximum time to wait for element (default: 10000ms)</p>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Tap by text */}
+            {selectedAction.type === 'tapByText' && (
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Text to Find</label>
+                <input
+                  type="text"
+                  value={selectedAction.tapText || ''}
+                  onChange={(e) => updateActionConfig(selectedAction.id, { tapText: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="e.g., Đăng nhập"
+                />
+              </div>
+            )}
+
+            {/* Scroll direction */}
+            {selectedAction.type === 'scroll' && (
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Scroll Direction</label>
+                <select
+                  value={selectedAction.scrollDirection || 'down'}
+                  onChange={(e) => updateActionConfig(selectedAction.id, {
+                    scrollDirection: e.target.value as 'up' | 'down'
+                  })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="down">Down</option>
+                  <option value="up">Up</option>
+                </select>
+              </div>
+            )}
+
+            {/* Open app */}
+            {selectedAction.type === 'openApp' && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">App Package</label>
+                  <input
+                    type="text"
+                    value={selectedAction.appPackage || ''}
+                    onChange={(e) => updateActionConfig(selectedAction.id, { appPackage: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="e.g., com.twitter.android"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">App Name (Optional)</label>
+                  <input
+                    type="text"
+                    value={selectedAction.appName || ''}
+                    onChange={(e) => updateActionConfig(selectedAction.id, { appName: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="e.g., Twitter"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Info for actions without config */}
+            {['back', 'home', 'screenshot'].includes(selectedAction.type) && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                <p className="text-sm text-gray-600">
+                  This action type has no configurable properties.
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="p-3 border-t bg-gray-50 rounded-b-xl">
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <Settings size={12} />
+              <span>Changes are saved automatically</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Node Settings Panel - RIGHT */}
       {selectedNodeData && onSaveNodeConfig && (

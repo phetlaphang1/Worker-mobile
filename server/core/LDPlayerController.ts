@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import { logger } from '../utils/logger.js';
 import { ProxyConfig, formatProxyForLDPlayer } from '../types/proxy.js';
+import { ADBConnectionPool } from './ADBConnectionPool.js';
 
 const execAsync = promisify(exec);
 
@@ -27,18 +28,101 @@ export class LDPlayerController {
   private adbPath: string;
   private instances: Map<string, LDPlayerInstance> = new Map();
 
+  // ⚡ NEW: ADB Connection Pool for better performance
+  private adbPool: ADBConnectionPool;
+
   constructor() {
     this.ldConsolePath = process.env.LDCONSOLE_PATH || 'D:\\LDPlayer\\LDPlayer9\\ldconsole.exe';
     this.adbPath = process.env.ADB_PATH || 'D:\\LDPlayer\\LDPlayer9\\adb.exe';
 
+    // Initialize ADB connection pool
+    this.adbPool = new ADBConnectionPool(this.adbPath);
+
     logger.info(`LDPlayerController initialized with:`);
     logger.info(`  ldconsole: ${this.ldConsolePath}`);
     logger.info(`  adb: ${this.adbPath}`);
+    logger.info(`  ADB Connection Pool: ENABLED ⚡`);
+  }
 
-    // Auto-enable ADB debugging for all instances on startup
-    this.enableADBForAllInstances().catch(err => {
-      logger.warn('Failed to auto-enable ADB debugging:', err);
-    });
+  /**
+   * CRITICAL: Initialize ADB system on server startup
+   * This ensures clean ADB state and proper port synchronization
+   * Call this ONCE when server starts, before any other operations
+   */
+  async initializeADBSystem(): Promise<void> {
+    try {
+      logger.info('='.repeat(80));
+      logger.info('[INIT] Starting ADB System Initialization...');
+      logger.info('='.repeat(80));
+
+      // Step 1: Kill any existing ADB daemon to ensure clean state
+      logger.info('[INIT] Step 1/7: Killing existing ADB daemon...');
+      try {
+        await execAsync(`"${this.adbPath}" kill-server`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        logger.info('[INIT] ✅ ADB daemon killed');
+      } catch (error) {
+        logger.warn('[INIT] Failed to kill ADB daemon (may not be running):', error);
+      }
+
+      // Step 2: Start fresh ADB daemon
+      logger.info('[INIT] Step 2/7: Starting ADB daemon...');
+      try {
+        const startResult = await execAsync(`"${this.adbPath}" start-server`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        logger.info('[INIT] ✅ ADB daemon started');
+        if (startResult.stdout) logger.debug('[INIT] Output:', startResult.stdout);
+      } catch (error: any) {
+        logger.error('[INIT] ❌ Failed to start ADB daemon:', error);
+        throw new Error(`ADB daemon failed to start: ${error.message}`);
+      }
+
+      // Step 3: Verify ADB daemon is running
+      logger.info('[INIT] Step 3/7: Verifying ADB daemon...');
+      try {
+        const devicesResult = await execAsync(`"${this.adbPath}" devices`);
+        if (devicesResult.stdout.includes('List of devices attached')) {
+          logger.info('[INIT] ✅ ADB daemon is healthy');
+        } else {
+          throw new Error('Unexpected ADB devices output');
+        }
+      } catch (error: any) {
+        logger.error('[INIT] ❌ ADB daemon verification failed:', error);
+        throw new Error(`ADB daemon unhealthy: ${error.message}`);
+      }
+
+      // Step 4: Load all instances from LDPlayer
+      logger.info('[INIT] Step 4/7: Loading instances from LDPlayer...');
+      await this.getAllInstancesFromLDConsole();
+      const instanceCount = this.instances.size;
+      logger.info(`[INIT] ✅ Loaded ${instanceCount} instances`);
+
+      // Step 5: Enable ADB debugging for all instances
+      logger.info('[INIT] Step 5/7: Enabling ADB debugging for all instances...');
+      await this.enableADBForAllInstances();
+      logger.info('[INIT] ✅ ADB debugging enabled');
+
+      // Step 6: Connect to all running instances
+      logger.info('[INIT] Step 6/7: Connecting to running instances...');
+      await this.connectAllRunningInstances();
+      logger.info('[INIT] ✅ Running instances connected');
+
+      // Step 7: Verify final state
+      logger.info('[INIT] Step 7/7: Verifying system state...');
+      const finalDevicesResult = await execAsync(`"${this.adbPath}" devices`);
+      const connectedDevices = finalDevicesResult.stdout.trim().split('\n').slice(1).filter(line => line.includes('device'));
+      logger.info(`[INIT] ✅ ${connectedDevices.length} devices connected to ADB`);
+
+      logger.info('='.repeat(80));
+      logger.info('[INIT] ✅ ADB System Initialization Complete!');
+      logger.info(`[INIT]    Total Instances: ${instanceCount}`);
+      logger.info(`[INIT]    ADB Devices: ${connectedDevices.length}`);
+      logger.info('='.repeat(80));
+
+    } catch (error) {
+      logger.error('[INIT] ❌ ADB System Initialization FAILED:', error);
+      throw error;
+    }
   }
 
   /**
@@ -406,8 +490,8 @@ export class LDPlayerController {
 
         logger.info(`[STARTUP] Launching instance: ${name} (attempt ${attempt}/${retryCount})...`);
 
-        // Step 1: Launch instance
-        const launchPromise = execAsync(`"${this.ldConsolePath}" launch --name "${name}"`);
+        // Step 1: Launch instance using --index instead of --name for better compatibility
+        const launchPromise = execAsync(`"${this.ldConsolePath}" launch --index ${instance.index}`);
 
         await Promise.race([
           launchPromise,
@@ -733,13 +817,32 @@ export class LDPlayerController {
 
   async removeInstance(name: string): Promise<void> {
     try {
-      await this.stopInstance(name);
-      await execAsync(`"${this.ldConsolePath}" remove --name "${name}"`);
+      // Check if instance exists in LDPlayer first
+      const listResult = await execAsync(`"${this.ldConsolePath}" list2`);
+      const exists = listResult.stdout.split('\n').some(line => {
+        const parts = line.split(',');
+        return parts.length >= 2 && parts[1] === name;
+      });
 
+      if (!exists) {
+        logger.warn(`[REMOVE] Instance ${name} not found in LDPlayer, skipping physical removal`);
+        this.instances.delete(name);
+        return;
+      }
+
+      // Stop instance if it exists
+      try {
+        await this.stopInstance(name);
+      } catch (stopError) {
+        logger.warn(`[REMOVE] Failed to stop instance ${name}, continuing with removal:`, stopError);
+      }
+
+      // Remove from LDPlayer
+      await execAsync(`"${this.ldConsolePath}" remove --name "${name}"`);
       this.instances.delete(name);
-      logger.info(`Removed instance: ${name}`);
+      logger.info(`✅ [REMOVE] Removed instance: ${name}`);
     } catch (error) {
-      logger.error(`Failed to remove instance ${name}:`, error);
+      logger.error(`[REMOVE] Failed to remove instance ${name}:`, error);
       throw error;
     }
   }
@@ -1241,79 +1344,73 @@ export class LDPlayerController {
 
   // Device Actions
   // Generic ADB command executor for custom commands
-  async executeAdbCommand(portOrSerial: number | string, command: string): Promise<string> {
+  // ⚡ NOW USES CONNECTION POOL FOR BETTER PERFORMANCE!
+  async executeAdbCommand(portOrSerial: number | string, command: string, options?: {
+    timeout?: number;
+    skipCache?: boolean;
+  }): Promise<string> {
     try {
-      // First check if device is connected
-      const devicesResult = await execAsync(`"${this.adbPath}" devices`);
-      let deviceId: string;
-
-      // Support both port (number) and serial (string)
-      if (typeof portOrSerial === 'number') {
-        deviceId = `127.0.0.1:${portOrSerial}`;
-      } else {
-        deviceId = portOrSerial;
-      }
-
-      // If device not found, try to find any connected device
-      if (!devicesResult.stdout.includes(deviceId)) {
-        // Parse all connected devices
-        const lines = devicesResult.stdout.trim().split('\n');
-        for (const line of lines) {
-          const emulatorMatch = line.match(/emulator-(\d+)\s+device/);
-          const ipMatch = line.match(/127\.0\.0\.1:(\d+)\s+device/);
-          if (emulatorMatch) {
-            deviceId = emulatorMatch[0].split(/\s+/)[0];
-            logger.info(`Using connected device ${deviceId} instead of ${portOrSerial}`);
-            break;
-          } else if (ipMatch) {
-            deviceId = ipMatch[0].split(/\s+/)[0];
-            logger.info(`Using connected device ${deviceId} instead of ${portOrSerial}`);
-            break;
-          }
-        }
-
-        // If still not found, try to connect (only for IP format)
-        if (!devicesResult.stdout.includes(deviceId) && typeof portOrSerial === 'number') {
-          logger.info(`Device ${deviceId} not connected, attempting to connect...`);
-          try {
-            await execAsync(`"${this.adbPath}" connect ${deviceId}`);
-            // Wait a bit for connection
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } catch (connectError) {
-            logger.error(`Failed to connect to ${deviceId}:`, connectError);
-            throw new Error(`ADB device ${deviceId} not available. Make sure the instance is running and ADB debugging is enabled.`);
-          }
-        }
-      }
-
-      const result = await execAsync(`"${this.adbPath}" -s ${deviceId} ${command}`);
-      logger.debug(`Executed ADB command on ${deviceId}: ${command}`);
-      return result.stdout;
+      // Use connection pool for much faster execution!
+      const result = await this.adbPool.execute(portOrSerial, command, options);
+      logger.debug(`Executed ADB command on ${portOrSerial}: ${command}`);
+      return result;
     } catch (error: any) {
       logger.error(`Failed to execute ADB command on ${portOrSerial}:`, error);
       throw new Error(`ADB command failed: ${error.message || error.stderr || 'Unknown error'}`);
     }
   }
 
+  /**
+   * Execute multiple ADB commands in batch (MUCH FASTER!)
+   * Use this when you need to run multiple commands sequentially
+   */
+  async executeBatchAdbCommands(portOrSerial: number | string, commands: string[]): Promise<string[]> {
+    try {
+      logger.info(`[BATCH] Executing ${commands.length} commands on ${portOrSerial}`);
+      const results = await this.adbPool.executeBatch(portOrSerial, commands);
+      logger.info(`[BATCH] ✅ Completed ${commands.length} commands`);
+      return results;
+    } catch (error: any) {
+      logger.error(`[BATCH] Failed to execute batch commands on ${portOrSerial}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get ADB pool statistics (for monitoring)
+   */
+  getADBPoolStats() {
+    return this.adbPool.getStats();
+  }
+
+  /**
+   * Clear ADB cache (force fresh lookups)
+   */
+  clearADBCache() {
+    this.adbPool.clearCache();
+    logger.info('ADB cache cleared');
+  }
+
+  // ⚡ OPTIMIZED: Faster timeout for simple input commands
   async tap(portOrSerial: number | string, x: number, y: number): Promise<void> {
-    await this.executeAdbCommand(portOrSerial, `shell input tap ${x} ${y}`);
+    await this.executeAdbCommand(portOrSerial, `shell input tap ${x} ${y}`, { timeout: 2000 }); // 2s timeout
     logger.debug(`Tapped at (${x}, ${y}) on ${portOrSerial}`);
   }
 
   async swipe(portOrSerial: number | string, x1: number, y1: number, x2: number, y2: number, duration: number = 500): Promise<void> {
-    await this.executeAdbCommand(portOrSerial, `shell input swipe ${x1} ${y1} ${x2} ${y2} ${duration}`);
+    await this.executeAdbCommand(portOrSerial, `shell input swipe ${x1} ${y1} ${x2} ${y2} ${duration}`, { timeout: 3000 }); // 3s timeout
     logger.debug(`Swiped from (${x1}, ${y1}) to (${x2}, ${y2}) on ${portOrSerial}`);
   }
 
   async inputText(portOrSerial: number | string, text: string): Promise<void> {
     // Escape special characters for shell
     const escapedText = text.replace(/([\\'"` ])/g, '\\$1');
-    await this.executeAdbCommand(portOrSerial, `shell input text "${escapedText}"`);
+    await this.executeAdbCommand(portOrSerial, `shell input text "${escapedText}"`, { timeout: 3000 }); // 3s timeout
     logger.debug(`Input text on ${portOrSerial}: ${text}`);
   }
 
   async pressKey(portOrSerial: number | string, keyCode: string): Promise<void> {
-    await this.executeAdbCommand(portOrSerial, `shell input keyevent ${keyCode}`);
+    await this.executeAdbCommand(portOrSerial, `shell input keyevent ${keyCode}`, { timeout: 2000 }); // 2s timeout
     logger.debug(`Pressed key ${keyCode} on ${portOrSerial}`);
   }
 

@@ -33,24 +33,61 @@ export class UIInspectorService {
   }
 
   /**
-   * Dump UI hierarchy và parse thành JSON
+   * Dump UI hierarchy và parse thành JSON (with retry)
    */
-  async dumpUIHierarchy(deviceSerial: string): Promise<string> {
+  async dumpUIHierarchy(deviceSerial: string, retries = 3): Promise<string> {
     logger.info(`Dumping UI hierarchy for device: ${deviceSerial}`);
 
-    // Dump UI to XML
-    await this.controller.executeAdbCommand(
-      deviceSerial,
-      'shell uiautomator dump /sdcard/window_dump.xml'
-    );
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        // Clear old dump first
+        try {
+          await this.controller.executeAdbCommand(
+            deviceSerial,
+            'shell rm -f /sdcard/window_dump.xml'
+          );
+        } catch (e) {
+          // Ignore error if file doesn't exist
+        }
 
-    // Read XML
-    const xml = await this.controller.executeAdbCommand(
-      deviceSerial,
-      'shell cat /sdcard/window_dump.xml'
-    );
+        // Small delay to let the system stabilize
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-    return xml;
+        // Dump UI to XML
+        await this.controller.executeAdbCommand(
+          deviceSerial,
+          'shell uiautomator dump /sdcard/window_dump.xml'
+        );
+
+        // Wait a bit for dump to complete
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Read XML
+        const xml = await this.controller.executeAdbCommand(
+          deviceSerial,
+          'shell cat /sdcard/window_dump.xml'
+        );
+
+        // Verify XML is valid
+        if (xml && xml.includes('<?xml') && xml.includes('hierarchy')) {
+          logger.info(`UI dump successful on attempt ${attempt}`);
+          return xml;
+        } else {
+          throw new Error('Invalid XML output');
+        }
+      } catch (error: any) {
+        logger.warn(`UI dump attempt ${attempt}/${retries} failed:`, error.message);
+
+        if (attempt === retries) {
+          throw new Error(`Failed to dump UI after ${retries} attempts: ${error.message}`);
+        }
+
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+      }
+    }
+
+    throw new Error('Failed to dump UI hierarchy');
   }
 
   /**
@@ -104,16 +141,58 @@ export class UIInspectorService {
   }
 
   /**
-   * Tìm element tại tọa độ (x, y)
+   * Tìm element tại tọa độ (x, y) - với tolerance
    */
   findElementAtPosition(elements: UIElement[], x: number, y: number): UIElement | null {
-    // Find element that contains the point (x, y)
-    for (const element of elements) {
+    // First try: Find element that contains the point exactly
+    let matchingElements = elements.filter(element => {
       const { x1, y1, x2, y2 } = element.bounds;
-      if (x >= x1 && x <= x2 && y >= y1 && y <= y2) {
-        return element;
-      }
+      return x >= x1 && x <= x2 && y >= y1 && y <= y2;
+    });
+
+    if (matchingElements.length > 0) {
+      // Return the smallest element (most specific)
+      matchingElements.sort((a, b) => {
+        const areaA = (a.bounds.x2 - a.bounds.x1) * (a.bounds.y2 - a.bounds.y1);
+        const areaB = (b.bounds.x2 - b.bounds.x1) * (b.bounds.y2 - b.bounds.y1);
+        return areaA - areaB;
+      });
+
+      // Prefer elements with text or clickable
+      const withText = matchingElements.find(el => el.text || el.contentDesc);
+      const clickable = matchingElements.find(el => el.clickable);
+
+      return withText || clickable || matchingElements[0];
     }
+
+    // Second try: Find nearest clickable element within tolerance (50px)
+    const tolerance = 50;
+    const nearbyElements = elements.filter(element => {
+      const { x1, y1, x2, y2 } = element.bounds;
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
+      const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+      return distance <= tolerance && (element.clickable || element.text || element.contentDesc);
+    });
+
+    if (nearbyElements.length > 0) {
+      // Sort by distance
+      nearbyElements.sort((a, b) => {
+        const distA = Math.sqrt(
+          Math.pow(x - (a.bounds.x1 + a.bounds.x2) / 2, 2) +
+          Math.pow(y - (a.bounds.y1 + a.bounds.y2) / 2, 2)
+        );
+        const distB = Math.sqrt(
+          Math.pow(x - (b.bounds.x1 + b.bounds.x2) / 2, 2) +
+          Math.pow(y - (b.bounds.y1 + b.bounds.y2) / 2, 2)
+        );
+        return distA - distB;
+      });
+
+      logger.info(`Found nearby element at distance from (${x}, ${y})`);
+      return nearbyElements[0];
+    }
+
     return null;
   }
 

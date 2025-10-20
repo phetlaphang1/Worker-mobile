@@ -736,6 +736,71 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
+  // ⚡ ADB Connection Pool Stats (for monitoring performance)
+  app.get('/api/adb-pool/stats', (req: Request, res: Response) => {
+    try {
+      const stats = ldPlayerController.getADBPoolStats();
+      res.json({
+        success: true,
+        stats: {
+          ...stats,
+          timestamp: new Date().toISOString(),
+          uptime: process.uptime(),
+          description: {
+            activeConnections: 'Number of active ADB connections (reused for better performance)',
+            cachedSerials: 'Number of cached device serials (avoids repeated adb devices calls)',
+            queuedCommands: 'Number of commands currently queued for execution'
+          }
+        }
+      });
+    } catch (error: any) {
+      logger.error('Failed to get ADB pool stats:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ⚡ Clear ADB Pool Cache (force fresh lookups)
+  app.post('/api/adb-pool/clear-cache', (req: Request, res: Response) => {
+    try {
+      ldPlayerController.clearADBCache();
+      res.json({
+        success: true,
+        message: 'ADB pool cache cleared successfully. Next commands will use fresh device lookups.',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      logger.error('Failed to clear ADB pool cache:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // 🔍 DEBUG: Check profiles script status
+  app.get('/api/debug/profiles-scripts', (req: Request, res: Response) => {
+    try {
+      const allProfiles = profileManager.getAllProfiles();
+      const profilesInfo = allProfiles.map(p => ({
+        id: p.id,
+        name: p.name,
+        instanceName: p.instanceName,
+        status: p.status,
+        hasScript: !!(p.metadata?.scriptContent && p.metadata.scriptContent.trim() !== ''),
+        scriptLength: p.metadata?.scriptContent?.length || 0,
+        scriptPreview: p.metadata?.scriptContent?.substring(0, 100) || 'No script'
+      }));
+
+      res.json({
+        success: true,
+        totalProfiles: allProfiles.length,
+        inactiveProfiles: allProfiles.filter(p => p.status === 'inactive').length,
+        profilesWithScripts: profilesInfo.filter(p => p.hasScript).length,
+        profiles: profilesInfo
+      });
+    } catch (error: any) {
+      logger.error('Failed to get profiles scripts info:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.put('/api/settings', (req: Request, res: Response) => {
     try {
       // In real implementation, save settings
@@ -817,15 +882,12 @@ export function setupRoutes(app: Express, services: RouteServices) {
         return res.status(404).json({ error: 'Profile not found' });
       }
 
-      // Activate profile if not already active
-      if (profile.status !== 'active') {
-        await profileManager.activateProfile(profileId);
-        // Get fresh profile after activation
-        profile = profileManager.getProfile(profileId)!;
-      }
+      // IMPORTANT: Always launch instance, even if status is 'active'
+      // This ensures instance is actually running (LDPlayer might have stopped)
+      logger.info(`[LAUNCH] Launching instance for profile ${profile.name} (current status: ${profile.status})`);
+      await profileManager.activateProfile(profileId);
 
-      // IMPORTANT: Always get FRESH profile from DB to ensure latest script content
-      // (in case user just updated script but instance was already active)
+      // Get fresh profile after activation
       profile = profileManager.getProfile(profileId)!;
 
       // Execute script if exists in profile metadata
@@ -838,17 +900,40 @@ export function setupRoutes(app: Express, services: RouteServices) {
         logger.info(`Executing script for profile ${profile.name}`);
         const task = await directScriptService.queueScript(scriptContent, profileId);
 
+        // Return response matching client expectations
         res.json({
           success: true,
           message: 'Profile launched and script executing',
           execution: {
             taskId: task.id,
-            status: task.status
+            status: 'RUNNING',
+            profileName: profile.name,
+            timestamp: new Date().toISOString(),
+            script: scriptContent,
+            config: {
+              profileId: profile.id,
+              instanceName: profile.instanceName,
+              port: profile.port
+            }
           }
         });
       } else {
         logger.info(`Profile ${profile.name} has no script to execute`);
-        res.json({ success: true, message: 'Profile launched (no script to execute)' });
+        res.json({
+          success: true,
+          message: 'Profile launched (no script to execute)',
+          execution: {
+            status: 'COMPLETED',
+            profileName: profile.name,
+            timestamp: new Date().toISOString(),
+            script: null,
+            config: {
+              profileId: profile.id,
+              instanceName: profile.instanceName,
+              port: profile.port
+            }
+          }
+        });
       }
     } catch (error) {
       logger.error('Error launching profile:', error);
@@ -1071,13 +1156,22 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Run All Profiles with Scripts (Launch + Execute Scripts)
   app.post('/api/profiles/run-all-with-scripts', async (req: Request, res: Response) => {
     try {
-      const { onlyInactive = true, delay = 3000, maxConcurrent = 3 } = req.body;
+      // ⚠️ FORCE: Run ALL profiles sequentially (ignore client params)
+      const { onlyInactive = false, delay = 2000, maxConcurrent = 1 } = req.body;
+
+      logger.info(`[API] Run All requested with params: onlyInactive=${onlyInactive}, delay=${delay}, maxConcurrent=${maxConcurrent}`);
 
       if (!directScriptService) {
         return res.status(500).json({ error: 'Direct Script Service not initialized' });
       }
 
       logger.info('[API] Run All profiles with scripts requested');
+
+      // DEBUG: Log all loaded profiles
+      const allProfiles = profileManager.getAllProfiles();
+      logger.info(`[RUN ALL] Total loaded profiles: ${allProfiles.length}`);
+      logger.info(`[RUN ALL] Profile IDs: ${allProfiles.map(p => p.id).join(', ')}`);
+      logger.info(`[RUN ALL] Inactive profiles: ${allProfiles.filter(p => p.status === 'inactive').map(p => `${p.id}:${p.name}`).join(', ')}`);
 
       // First, launch all profiles
       const launchResult = await profileManager.runAllProfilesWithScripts({
@@ -1088,11 +1182,25 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
       // Queue scripts for profiles that have scripts
       const scriptTasks = [];
+      logger.info(`[RUN ALL] Processing ${launchResult.results.length} results to queue scripts...`);
+
       for (const result of launchResult.results) {
+        logger.info(`[RUN ALL] Profile ${result.profileId} (${result.profileName}): success=${result.success}, scriptExecuted=${result.scriptExecuted}`);
+
         if (result.success && result.scriptExecuted) {
           const profile = profileManager.getProfile(result.profileId);
-          if (profile?.metadata?.scriptContent) {
+
+          if (!profile) {
+            logger.warn(`[RUN ALL] Profile ${result.profileId} not found in manager!`);
+            continue;
+          }
+
+          const hasScript = profile?.metadata?.scriptContent && profile.metadata.scriptContent.trim() !== '';
+          logger.info(`[RUN ALL] Profile ${profile.name} has script: ${hasScript}, scriptContent length: ${profile.metadata?.scriptContent?.length || 0}`);
+
+          if (hasScript && profile.metadata?.scriptContent) {
             try {
+              logger.info(`[RUN ALL] Queueing script for profile ${profile.name} (ID: ${profile.id})...`);
               const task = await directScriptService.queueScript(
                 profile.metadata.scriptContent,
                 profile.id
@@ -1102,19 +1210,24 @@ export function setupRoutes(app: Express, services: RouteServices) {
                 profileName: profile.name,
                 taskId: task.id
               });
+              logger.info(`[RUN ALL] ✅ Queued script task ${task.id} for profile ${profile.name}`);
             } catch (error) {
-              logger.error(`Failed to queue script for profile ${profile.name}:`, error);
+              logger.error(`[RUN ALL] ❌ Failed to queue script for profile ${profile.name}:`, error);
             }
+          } else {
+            logger.warn(`[RUN ALL] Profile ${profile.name} has no script content to execute`);
           }
+        } else {
+          logger.info(`[RUN ALL] Skipping profile ${result.profileId}: success=${result.success}, scriptExecuted=${result.scriptExecuted}`);
         }
       }
 
       res.json({
         success: true,
         message: `Launched ${launchResult.successCount} profile(s), executed ${scriptTasks.length} script(s)`,
-        launched: launchResult.successCount,
-        failed: launchResult.failCount,
-        skipped: launchResult.skippedCount,
+        successCount: launchResult.successCount,  // ← Fix: Match client expectation
+        failCount: launchResult.failCount,        // ← Fix: Match client expectation
+        skippedCount: launchResult.skippedCount,  // ← Fix: Match client expectation
         scriptsExecuted: scriptTasks.length,
         results: launchResult.results,
         scriptTasks
@@ -1377,6 +1490,38 @@ export function setupRoutes(app: Express, services: RouteServices) {
       console.error('[DEBUG API] Error executing direct script:', error);
       logger.error('Error executing direct script:', error);
       res.status(500).json({ error: 'Failed to execute direct script' });
+    }
+  });
+
+  // Toggle script execution permission for a profile
+  app.post('/api/profiles/:profileId/toggle-script-execution', async (req: Request, res: Response) => {
+    try {
+      const profileId = parseInt(req.params.profileId);
+      const { enabled } = req.body;
+
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: 'enabled must be a boolean' });
+      }
+
+      const profile = await profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      // Update canRunScript flag
+      profile.canRunScript = enabled;
+      await profileManager.updateProfile(profileId, profile);
+
+      logger.info(`Script execution ${enabled ? 'enabled' : 'disabled'} for profile ${profileId}`);
+      res.json({
+        success: true,
+        profileId,
+        canRunScript: enabled,
+        message: `Script execution ${enabled ? 'enabled' : 'disabled'}`
+      });
+    } catch (error) {
+      logger.error('Error toggling script execution:', error);
+      res.status(500).json({ error: 'Failed to toggle script execution' });
     }
   });
 

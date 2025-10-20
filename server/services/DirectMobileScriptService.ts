@@ -132,15 +132,59 @@ export class DirectMobileScriptService {
       // Helper functions sử dụng ADB trực tiếp (giống Puppeteer)
       // NOTE: Use deviceSerial instead of actualPort for all ADB commands
       const helpers = {
-        // Tap vào tọa độ (ADB command)
-        tap: async (x: number, y: number) => {
-          log(`Tapping at (${x}, ${y})`);
-          try {
-            await this.controller.executeAdbCommand(deviceSerial, `shell input tap ${x} ${y}`);
-            log(`Tap successful`);
-          } catch (error: any) {
-            log(`Tap failed: ${error.message}`);
-            throw error;
+        // Tap vào tọa độ (ADB command) with "fat finger" mode for better accuracy
+        tap: async (x: number, y: number, options?: {
+          tolerance?: number; // Tap radius in pixels (default: 0 = single tap)
+          multiTap?: boolean; // Tap multiple points around target (default: false)
+        }) => {
+          const tolerance = options?.tolerance ?? 15; // Default 15px radius for better hit rate
+          const multiTap = options?.multiTap ?? false;
+
+          if (tolerance > 0 && multiTap) {
+            // Multi-tap mode: tap 5 points (center + 4 corners of square)
+            log(`Multi-tapping at (${x}, ${y}) with ${tolerance}px tolerance (5 points)`);
+            const points = [
+              { x: x, y: y }, // Center
+              { x: x - tolerance, y: y - tolerance }, // Top-left
+              { x: x + tolerance, y: y - tolerance }, // Top-right
+              { x: x - tolerance, y: y + tolerance }, // Bottom-left
+              { x: x + tolerance, y: y + tolerance }, // Bottom-right
+            ];
+
+            for (const point of points) {
+              try {
+                await this.controller.executeAdbCommand(deviceSerial, `shell input tap ${point.x} ${point.y}`);
+                await new Promise(resolve => setTimeout(resolve, 50)); // 50ms delay between taps
+              } catch (error: any) {
+                // Ignore individual tap failures, continue with next point
+              }
+            }
+            log(`Multi-tap completed`);
+          } else if (tolerance > 0) {
+            // Single tap with random offset within tolerance radius for better hit rate
+            const randomOffsetX = Math.floor((Math.random() - 0.5) * tolerance);
+            const randomOffsetY = Math.floor((Math.random() - 0.5) * tolerance);
+            const targetX = x + randomOffsetX;
+            const targetY = y + randomOffsetY;
+
+            log(`Tapping at (${x}, ${y}) with tolerance ${tolerance}px → actual (${targetX}, ${targetY})`);
+            try {
+              await this.controller.executeAdbCommand(deviceSerial, `shell input tap ${targetX} ${targetY}`);
+              log(`Tap successful`);
+            } catch (error: any) {
+              log(`Tap failed: ${error.message}`);
+              throw error;
+            }
+          } else {
+            // Exact tap (no tolerance)
+            log(`Tapping at (${x}, ${y})`);
+            try {
+              await this.controller.executeAdbCommand(deviceSerial, `shell input tap ${x} ${y}`);
+              log(`Tap successful`);
+            } catch (error: any) {
+              log(`Tap failed: ${error.message}`);
+              throw error;
+            }
           }
         },
 
@@ -318,10 +362,33 @@ export class DirectMobileScriptService {
         },
 
         // Tap element by text (tìm và tap luôn!)
-        tapByText: async (text: string) => {
-          log(`Tapping element with text: ${text}`);
-          const element = await helpers.findElement(text, 'text');
-          await helpers.tap(element.x, element.y);
+        tapByText: async (text: string, options?: { partialMatch?: boolean; caseSensitive?: boolean }) => {
+          const partialMatch = options?.partialMatch ?? false;
+          const caseSensitive = options?.caseSensitive ?? true;
+
+          log(`Tapping element with text: "${text}" (partial: ${partialMatch}, caseSensitive: ${caseSensitive})`);
+
+          if (partialMatch || !caseSensitive) {
+            // Use XPath for advanced matching
+            const caseFlag = caseSensitive ? '' : 'translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")';
+            const textToMatch = caseSensitive ? text : text.toLowerCase();
+
+            let xpath = '';
+            if (partialMatch && !caseSensitive) {
+              xpath = `//*[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "${textToMatch}")]`;
+            } else if (partialMatch) {
+              xpath = `//*[contains(text(), "${textToMatch}")]`;
+            } else if (!caseSensitive) {
+              xpath = `//*[translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")="${textToMatch}"]`;
+            }
+
+            const element = await helpers.findByXPath(xpath);
+            await helpers.tap(element.x, element.y);
+          } else {
+            // Exact match (default)
+            const element = await helpers.findElement(text, 'text');
+            await helpers.tap(element.x, element.y);
+          }
         },
 
         // Tap element by resource-id
@@ -363,6 +430,14 @@ export class DirectMobileScriptService {
           }
 
           throw new Error(`Element not found after ${timeout}ms: ${selector}`);
+        },
+
+        // Wait for text to appear (alias for waitForElement with type='text')
+        // Compatible with generated scripts
+        waitForText: async (text: string, options: { timeout?: number } = {}) => {
+          const timeout = options.timeout || 10000;
+          log(`Waiting for text: "${text}" (timeout: ${timeout}ms)`);
+          return await helpers.waitForElement(text, 'text', timeout);
         },
 
         // Find multiple elements (returns array)
@@ -462,12 +537,74 @@ export class DirectMobileScriptService {
         },
 
         // Tap at relative position (percentage of screen)
-        tapRel: async (xPercent: number, yPercent: number) => {
+        // Enhanced with aspect ratio compensation for better cross-device accuracy
+        tapRel: async (xPercent: number, yPercent: number, options?: {
+          baseWidth?: number;
+          baseHeight?: number;
+          anchor?: 'top-left' | 'top-center' | 'top-right' | 'center' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+          tolerance?: number; // Tap tolerance in pixels (default: 20px)
+          multiTap?: boolean; // Tap 5 points for better accuracy (default: false)
+        }) => {
           const size = await helpers.getScreenSize();
-          const x = Math.floor((size.width * xPercent) / 100);
-          const y = Math.floor((size.height * yPercent) / 100);
-          log(`Tapping at ${xPercent}%, ${yPercent}% = (${x}, ${y})`);
-          await helpers.tap(x, y);
+
+          // Base resolution (from recording device)
+          const baseWidth = options?.baseWidth || 1080;
+          const baseHeight = options?.baseHeight || 2400;
+
+          // Calculate aspect ratios
+          const baseAspect = baseWidth / baseHeight;
+          const currentAspect = size.width / size.height;
+
+          let x: number, y: number;
+
+          if (options?.anchor) {
+            // Use anchor-based positioning for better accuracy
+            const anchor = options.anchor;
+
+            // Calculate offset from anchor point
+            let anchorX = 0, anchorY = 0;
+            if (anchor.includes('center')) anchorX = size.width / 2;
+            else if (anchor.includes('right')) anchorX = size.width;
+
+            if (anchor.includes('center') && !anchor.includes('top') && !anchor.includes('bottom')) anchorY = size.height / 2;
+            else if (anchor.includes('bottom')) anchorY = size.height;
+
+            // Convert % to offset from anchor
+            const offsetX = (size.width * xPercent) / 100 - (baseWidth * xPercent) / 100;
+            const offsetY = (size.height * yPercent) / 100 - (baseHeight * yPercent) / 100;
+
+            x = Math.floor(anchorX + offsetX);
+            y = Math.floor(anchorY + offsetY);
+          } else {
+            // Standard percentage-based tap with aspect ratio compensation
+            // If aspect ratios differ significantly, adjust Y coordinate
+            if (Math.abs(currentAspect - baseAspect) > 0.05) {
+              // Device is narrower/wider than base
+              const aspectRatio = currentAspect / baseAspect;
+
+              // Compensate Y position based on aspect ratio
+              // Elements typically shift vertically when aspect changes
+              const compensatedYPercent = yPercent + (yPercent - 50) * (1 - aspectRatio) * 0.3;
+
+              x = Math.floor((size.width * xPercent) / 100);
+              y = Math.floor((size.height * compensatedYPercent) / 100);
+
+              log(`Aspect ratio compensation: ${baseAspect.toFixed(3)} -> ${currentAspect.toFixed(3)}, Y adjusted: ${yPercent}% -> ${compensatedYPercent.toFixed(1)}%`);
+            } else {
+              // No compensation needed
+              x = Math.floor((size.width * xPercent) / 100);
+              y = Math.floor((size.height * yPercent) / 100);
+            }
+          }
+
+          log(`Tapping at ${xPercent}%, ${yPercent}% = (${x}, ${y}) on ${size.width}x${size.height}`);
+
+          // Use default tolerance (20px) for better hit rate on all taps
+          // Users can override by passing tolerance: 0 to disable
+          const tolerance = options?.tolerance ?? 20;
+          const multiTap = options?.multiTap ?? false;
+
+          await helpers.tap(x, y, { tolerance, multiTap });
         },
 
         // Swipe with relative coordinates
@@ -822,9 +959,9 @@ export class DirectMobileScriptService {
       const startTime = Date.now();
 
       try {
-        // Execute script with helpers context (use sanitized version)
-        const scriptFunction = new AsyncFunction('helpers', 'log', sanitizedScript);
-        const result = await scriptFunction(helpers, log);
+        // Execute script with helpers, log, and profile context (use sanitized version)
+        const scriptFunction = new AsyncFunction('helpers', 'log', 'profile', sanitizedScript);
+        const result = await scriptFunction(helpers, log, profile);
         const duration = Date.now() - startTime;
 
         log(`Script execution completed successfully in ${duration}ms`);
@@ -858,8 +995,22 @@ export class DirectMobileScriptService {
 
   /**
    * Queue script để execute
+   * Auto-clears old completed/failed tasks for the same profile before queueing new task
    */
   async queueScript(scriptCode: string, profileId: number): Promise<DirectScriptTask> {
+    // IMPORTANT: Clear old completed/failed tasks for this profile to prevent UI confusion
+    // Keep only pending/running tasks for this profile
+    const oldCompletedCount = this.scriptQueue.filter(
+      t => t.profileId === profileId && (t.status === 'completed' || t.status === 'failed')
+    ).length;
+
+    if (oldCompletedCount > 0) {
+      this.scriptQueue = this.scriptQueue.filter(
+        t => !(t.profileId === profileId && (t.status === 'completed' || t.status === 'failed'))
+      );
+      logger.info(`Cleared ${oldCompletedCount} old tasks for profile ${profileId} before queueing new task`);
+    }
+
     const task: DirectScriptTask = {
       id: this.generateTaskId(),
       profileId,

@@ -33,6 +33,7 @@ async function killProcessOnPort(port: number | string): Promise<void> {
 
     if (lines.length === 0) {
       // No process using this port
+      logger.info(`✓ Port ${portNum} is available`);
       return;
     }
 
@@ -58,10 +59,12 @@ async function killProcessOnPort(port: number | string): Promise<void> {
     }
 
     // Wait a moment for port to be released
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    logger.info(`⏳ Waiting for port ${portNum} to be fully released...`);
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
   } catch (error) {
     // No process found or netstat failed - that's fine
+    logger.info(`✓ Port ${port} appears to be available`);
   }
 }
 
@@ -110,6 +113,8 @@ const deviceMonitor = new DeviceMonitor(ldPlayerController, {
   enableLogcat: true,
   enableHealthCheck: true
 });
+// Attach ProfileManager for auto port sync to database
+deviceMonitor.setProfileManager(profileManager);
 
 // Fingerprint Service - Device fingerprint randomization (GemLogin-like)
 const fingerprintService = new FingerprintService(ldPlayerController);
@@ -327,33 +332,34 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Start services
 async function startServices() {
   try {
-    // Load all instances from LDPlayer FIRST (critical!)
-    await ldPlayerController.getAllInstancesFromLDConsole();
-    // logger.info('LDPlayer instances loaded');
+    // CRITICAL: Initialize ADB system FIRST to ensure clean state
+    // This prevents "ADB daemon failed to start" and "device not found" errors
+    logger.info('🚀 Starting Worker-Mobile Server...');
+    await ldPlayerController.initializeADBSystem();
 
-    // Initialize profile manager first
+    // Initialize profile manager
     await profileManager.initialize();
-    // logger.info('Profile manager initialized');
+    logger.info('✅ Profile manager initialized');
 
     // Initialize session manager
     await sessionManager.initialize();
-    // logger.info('Session manager initialized');
+    logger.info('✅ Session manager initialized');
 
     // Initialize action recorder
     await actionRecorder.initialize();
-    // logger.info('Action recorder initialized');
+    logger.info('✅ Action recorder initialized');
 
     // Initialize profile isolation service
     await isolationService.initialize();
-    // logger.info('Profile isolation service initialized');
+    logger.info('✅ Profile isolation service initialized');
 
     // Start task executor
     await taskExecutor.start();
-    // logger.info('Task executor started');
+    logger.info('✅ Task executor started');
 
     // Start device monitor
     await deviceMonitor.start();
-    // logger.info('Device monitor started');
+    logger.info('✅ Device monitor started');
 
     // Initialize proxy manager from routes (for backward compatibility)
     const routeProxyManager = initializeProxyManager({
@@ -377,9 +383,13 @@ async function startServices() {
     // Kill any existing process using the port before starting
     await killProcessOnPort(port);
 
+    // Add extra delay to ensure port is fully released
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
     // Start server
     server.listen(port, () => {
       logger.info(`✅ Mobile Worker server running on port ${port}`);
+      logger.info(`🌐 Ready to accept connections from client (Vite proxy)`);
       // logger.info(`WebSocket server ready on ws://localhost:${port}`);
 
       // Suppress banner - too noisy for production

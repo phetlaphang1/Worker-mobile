@@ -306,16 +306,18 @@ export const useInstanceMutations = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          onlyInactive: options?.onlyInactive ?? true,
-          delay: options?.delay ?? 3000,
-          maxConcurrent: options?.maxConcurrent ?? 3
+          onlyInactive: options?.onlyInactive ?? false,  // ← CHANGED: Run ALL instances (không phân biệt status)
+          delay: options?.delay ?? 2000,  // ← Giảm delay xuống 2s
+          maxConcurrent: options?.maxConcurrent ?? 1  // ← CHANGED: Chạy tuần tự (1 instance 1 lần)
         })
       });
       if (!response.ok) {
-        throw new Error('Failed to run all profiles');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to run all profiles');
       }
       return response.json();
     },
+    retry: false,  // ← Don't retry automatically
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
@@ -344,10 +346,12 @@ export const useInstanceMutations = () => {
         })
       });
       if (!response.ok) {
-        throw new Error('Failed to stop all profiles');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to stop all profiles');
       }
       return response.json();
     },
+    retry: false,  // ← Don't retry automatically
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
       queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
