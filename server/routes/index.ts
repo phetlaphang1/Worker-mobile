@@ -882,13 +882,26 @@ export function setupRoutes(app: Express, services: RouteServices) {
         return res.status(404).json({ error: 'Profile not found' });
       }
 
-      // IMPORTANT: Always launch instance, even if status is 'active'
-      // This ensures instance is actually running (LDPlayer might have stopped)
-      logger.info(`[LAUNCH] Launching instance for profile ${profile.name} (current status: ${profile.status})`);
-      await profileManager.activateProfile(profileId);
+      // Check if instance is already running
+      const isRunning = await profileManager.isInstanceRunning(profile.instanceName);
 
-      // Get fresh profile after activation
-      profile = profileManager.getProfile(profileId)!;
+      if (!isRunning) {
+        // Only launch instance if it's NOT already running
+        logger.info(`[LAUNCH] Launching instance for profile ${profile.name} (currently stopped)`);
+        await profileManager.activateProfile(profileId);
+
+        // Get fresh profile after activation
+        profile = profileManager.getProfile(profileId)!;
+      } else {
+        logger.info(`[LAUNCH] Instance ${profile.instanceName} already running, skipping launch`);
+
+        // Update profile status to active if it's not already
+        if (profile.status !== 'active') {
+          profile.status = 'active';
+          await profileManager.updateProfile(profileId, { status: 'active' });
+          profile = profileManager.getProfile(profileId)!;
+        }
+      }
 
       // Execute script if exists in profile metadata
       const scriptContent = profile.metadata?.scriptContent;
@@ -1106,6 +1119,30 @@ export function setupRoutes(app: Express, services: RouteServices) {
     }
   });
 
+  // Reload profiles from disk (useful after manual edits)
+  app.post('/api/profiles/reload', async (req: Request, res: Response) => {
+    try {
+      logger.info('[API] Reloading profiles from disk...');
+      await profileManager.reloadProfiles();
+      const profiles = profileManager.getAllProfiles();
+
+      res.json({
+        success: true,
+        message: 'Profiles reloaded successfully',
+        totalProfiles: profiles.length,
+        profiles: profiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          status: p.status,
+          hasScript: !!(p.metadata?.scriptContent && p.metadata.scriptContent.trim() !== '')
+        }))
+      });
+    } catch (error) {
+      logger.error('Error reloading profiles:', error);
+      res.status(500).json({ error: 'Failed to reload profiles' });
+    }
+  });
+
   // Run All Profiles (Launch instances only, no scripts)
   app.post('/api/profiles/run-all', async (req: Request, res: Response) => {
     try {
@@ -1157,9 +1194,9 @@ export function setupRoutes(app: Express, services: RouteServices) {
   app.post('/api/profiles/run-all-with-scripts', async (req: Request, res: Response) => {
     try {
       // ⚠️ FORCE: Run ALL profiles sequentially (ignore client params)
-      const { onlyInactive = false, delay = 2000, maxConcurrent = 1 } = req.body;
+      const { onlyInactive = false, delay = 2000, maxConcurrent = 1, launchFirst = true } = req.body;
 
-      logger.info(`[API] Run All requested with params: onlyInactive=${onlyInactive}, delay=${delay}, maxConcurrent=${maxConcurrent}`);
+      logger.info(`[API] Run All requested with params: onlyInactive=${onlyInactive}, delay=${delay}, maxConcurrent=${maxConcurrent}, launchFirst=${launchFirst}`);
 
       if (!directScriptService) {
         return res.status(500).json({ error: 'Direct Script Service not initialized' });
@@ -1172,13 +1209,37 @@ export function setupRoutes(app: Express, services: RouteServices) {
       logger.info(`[RUN ALL] Total loaded profiles: ${allProfiles.length}`);
       logger.info(`[RUN ALL] Profile IDs: ${allProfiles.map(p => p.id).join(', ')}`);
       logger.info(`[RUN ALL] Inactive profiles: ${allProfiles.filter(p => p.status === 'inactive').map(p => `${p.id}:${p.name}`).join(', ')}`);
+      logger.info(`[RUN ALL] Active profiles: ${allProfiles.filter(p => p.status === 'active').map(p => `${p.id}:${p.name}`).join(', ')}`);
 
-      // First, launch all profiles
-      const launchResult = await profileManager.runAllProfilesWithScripts({
-        onlyInactive,
-        delay,
-        maxConcurrent
-      });
+      let launchResult;
+
+      // First, launch profiles if requested
+      if (launchFirst) {
+        logger.info('[RUN ALL] Launching profiles first...');
+        launchResult = await profileManager.runAllProfilesWithScripts({
+          onlyInactive,
+          delay,
+          maxConcurrent
+        });
+      } else {
+        // Skip launch, just prepare mock result
+        logger.info('[RUN ALL] Skipping launch (launchFirst=false), running scripts only...');
+        const profilesToProcess = onlyInactive
+          ? allProfiles.filter(p => p.status === 'inactive')
+          : allProfiles;
+
+        launchResult = {
+          successCount: profilesToProcess.length,
+          failCount: 0,
+          skippedCount: 0,
+          results: profilesToProcess.map(p => ({
+            profileId: p.id,
+            profileName: p.name,
+            success: true,
+            scriptExecuted: true
+          }))
+        };
+      }
 
       // Queue scripts for profiles that have scripts
       const scriptTasks = [];
@@ -2517,6 +2578,59 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('[BATCH SCRIPT] Error:', error);
       res.status(500).json({ error: 'Failed to batch execute scripts' });
+    }
+  });
+
+  /**
+   * Diagnostic endpoint - Check system status for Run Scripts
+   */
+  app.get('/api/diagnostic/run-scripts', (req: Request, res: Response) => {
+    try {
+      const allProfiles = profileManager.getAllProfiles();
+      const profilesWithScripts = allProfiles.filter(p =>
+        p.metadata?.scriptContent && p.metadata.scriptContent.trim() !== ''
+      );
+
+      const diagnostic = {
+        systemStatus: {
+          directScriptServiceInitialized: !!directScriptService,
+          profileManagerInitialized: !!profileManager,
+          totalProfiles: allProfiles.length
+        },
+        profiles: allProfiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          status: p.status,
+          instanceName: p.instanceName,
+          hasScript: !!(p.metadata?.scriptContent && p.metadata.scriptContent.trim() !== ''),
+          scriptLength: p.metadata?.scriptContent?.length || 0,
+          hasAccounts: !!(p.metadata?.accounts?.x)
+        })),
+        summary: {
+          totalProfiles: allProfiles.length,
+          activeProfiles: allProfiles.filter(p => p.status === 'active').length,
+          inactiveProfiles: allProfiles.filter(p => p.status === 'inactive').length,
+          profilesWithScripts: profilesWithScripts.length,
+          profilesWithoutScripts: allProfiles.length - profilesWithScripts.length
+        },
+        recommendations: [] as string[]
+      };
+
+      // Add recommendations
+      if (!directScriptService) {
+        diagnostic.recommendations.push('⚠️ DirectScriptService not initialized - check server/index.ts');
+      }
+      if (profilesWithScripts.length === 0) {
+        diagnostic.recommendations.push('⚠️ No profiles have scripts - record scripts in Automation Builder');
+      }
+      if (allProfiles.filter(p => p.status === 'active').length === 0) {
+        diagnostic.recommendations.push('⚠️ No active profiles - launch profiles first before running scripts');
+      }
+
+      res.json(diagnostic);
+    } catch (error) {
+      logger.error('Error getting diagnostic info:', error);
+      res.status(500).json({ error: 'Failed to get diagnostic info' });
     }
   });
 

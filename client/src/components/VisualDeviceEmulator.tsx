@@ -526,46 +526,60 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
     script += `// Device: ${instanceName}\n`;
     script += `// Base Resolution: ${DEVICE_WIDTH}x${DEVICE_HEIGHT}\n`;
     script += `// Generated: ${new Date().toLocaleString()}\n`;
-    script += `// NOTE: Uses relative coordinates (%) for cross-device compatibility\n\n`;
+    script += `// NOTE: Uses relative coordinates (%) for cross-device compatibility\n`;
+    script += `// NOTE: Using human.* APIs for human-like behavior (anti-detect)\n\n`;
     script += `async function automationScript() {\n`;
     script += `  try {\n`;
     script += `    // Get current device screen size\n`;
     script += `    const screenSize = await helpers.getScreenSize();\n`;
     script += `    log(\`Device resolution: \${screenSize.width}x\${screenSize.height}\`);\n\n`;
+    script += `    // Handle Cloudflare if present (FREE mode)\n`;
+    script += `    await cloudflare.handle();\n\n`;
 
     actions.forEach((action, index) => {
       script += `    // Step ${index + 1}: ${action.type}\n`;
 
       if (action.type === 'click' && action.xPercent !== undefined && action.yPercent !== undefined) {
-        // Add base resolution for aspect ratio compensation
-        script += `    await helpers.tapRel(${action.xPercent.toFixed(2)}, ${action.yPercent.toFixed(2)}, { baseWidth: ${DEVICE_WIDTH}, baseHeight: ${DEVICE_HEIGHT} });\n`;
-        script += `    log('Tapped at ${action.xPercent.toFixed(1)}%, ${action.yPercent.toFixed(1)}%');\n`;
+        // Convert relative coords to absolute coords using current screen size
+        // Use unique variable names per step to avoid redeclaration errors
+        script += `    const tapX_${index} = Math.round((${action.xPercent.toFixed(2)} / 100) * screenSize.width);\n`;
+        script += `    const tapY_${index} = Math.round((${action.yPercent.toFixed(2)} / 100) * screenSize.height);\n`;
+        script += `    await human.tap(tapX_${index}, tapY_${index});\n`;
+        script += `    log('Human-like tap at ${action.xPercent.toFixed(1)}%, ${action.yPercent.toFixed(1)}%');\n`;
       } else if (action.type === 'swipe' && action.xPercent !== undefined && action.yPercent !== undefined && action.endXPercent !== undefined && action.endYPercent !== undefined) {
-        script += `    await helpers.swipeRel(${action.xPercent.toFixed(2)}, ${action.yPercent.toFixed(2)}, ${action.endXPercent.toFixed(2)}, ${action.endYPercent.toFixed(2)}, 300);\n`;
-        script += `    log('Swiped from ${action.xPercent.toFixed(1)}%, ${action.yPercent.toFixed(1)}% to ${action.endXPercent.toFixed(1)}%, ${action.endYPercent.toFixed(1)}%');\n`;
+        script += `    const swipeX1_${index} = Math.round((${action.xPercent.toFixed(2)} / 100) * screenSize.width);\n`;
+        script += `    const swipeY1_${index} = Math.round((${action.yPercent.toFixed(2)} / 100) * screenSize.height);\n`;
+        script += `    const swipeX2_${index} = Math.round((${action.endXPercent.toFixed(2)} / 100) * screenSize.width);\n`;
+        script += `    const swipeY2_${index} = Math.round((${action.endYPercent.toFixed(2)} / 100) * screenSize.height);\n`;
+        script += `    await human.swipe(swipeX1_${index}, swipeY1_${index}, swipeX2_${index}, swipeY2_${index});\n`;
+        script += `    log('Human-like swipe from ${action.xPercent.toFixed(1)}%, ${action.yPercent.toFixed(1)}% to ${action.endXPercent.toFixed(1)}%, ${action.endYPercent.toFixed(1)}%');\n`;
       } else if (action.type === 'type') {
         if (action.xPercent !== undefined && action.yPercent !== undefined) {
-          // Add base resolution for aspect ratio compensation
-          script += `    await helpers.tapRel(${action.xPercent.toFixed(2)}, ${action.yPercent.toFixed(2)}, { baseWidth: ${DEVICE_WIDTH}, baseHeight: ${DEVICE_HEIGHT} });\n`;
-          script += `    await helpers.sleep(500);\n`;
+          // Tap field with human-like behavior
+          script += `    const fieldX_${index} = Math.round((${action.xPercent.toFixed(2)} / 100) * screenSize.width);\n`;
+          script += `    const fieldY_${index} = Math.round((${action.yPercent.toFixed(2)} / 100) * screenSize.height);\n`;
+          script += `    await human.tap(fieldX_${index}, fieldY_${index});\n`;
+          script += `    await human.delay(300, 600);\n`;
         }
 
         // Handle text from account or manual input
         if (action.textSource === 'account' && action.accountField) {
           // Access accounts from profile.metadata.accounts.x (Twitter/X app)
-          script += `    await helpers.type(profile.metadata?.accounts?.x?.${action.accountField} || '');\n`;
-          script += `    log('Typed from account: ${action.accountField}');\n`;
+          script += `    await human.type(profile.metadata?.accounts?.x?.${action.accountField} || '');\n`;
+          script += `    log('Typed from account: ${action.accountField} (human-like)');\n`;
         } else if (action.text) {
-          script += `    await helpers.type("${action.text.replace(/"/g, '\\"')}");\n`;
-          script += `    log('Typed: "${action.text}');\n`;
+          script += `    await human.type("${action.text.replace(/"/g, '\\"')}");\n`;
+          script += `    log('Typed: "${action.text}" (human-like)');\n`;
         }
       } else if (action.type === 'wait') {
         if (action.waitType === 'element' && action.waitElementText) {
           script += `    await helpers.waitForText("${action.waitElementText.replace(/"/g, '\\"')}", { timeout: ${action.waitTimeout || 10000} });\n`;
           script += `    log('Waited for element: "${action.waitElementText.replace(/"/g, '\\"')}');\n`;
         } else if (action.duration) {
-          script += `    await helpers.sleep(${action.duration});\n`;
-          script += `    log('Waited ${action.duration}ms');\n`;
+          const min = Math.max(100, action.duration - 200);
+          const max = action.duration + 200;
+          script += `    await human.delay(${min}, ${max});\n`;
+          script += `    log('Human-like delay ~${action.duration}ms');\n`;
         }
       } else if (action.type === 'tapByText' && action.tapText) {
         script += `    await helpers.tapByText("${action.tapText.replace(/"/g, '\\"')}", { partialMatch: true, caseSensitive: false });\n`;
@@ -579,8 +593,9 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
         script += `    log('Double tapped at (${action.x}, ${action.y})');\n`;
       } else if (action.type === 'scroll') {
         const direction = action.scrollDirection || 'down';
-        script += `    await helpers.scroll('${direction}');\n`;
-        script += `    log('Scrolled ${direction}');\n`;
+        const distance = direction === 'down' ? 300 : -300;
+        script += `    await human.scroll(${distance});\n`;
+        script += `    log('Human-like scroll ${direction}');\n`;
       } else if (action.type === 'back') {
         script += `    await helpers.pressKey('BACK');\n`;
         script += `    log('Pressed BACK button');\n`;

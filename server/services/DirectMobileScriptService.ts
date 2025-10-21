@@ -3,6 +3,10 @@ import ProfileManager, { MobileProfile } from './ProfileManager.js';
 import { logger } from '../utils/logger.js';
 import * as xpath from 'xpath';
 import { DOMParser } from 'xmldom';
+import { MobileImposter } from '../antidetect/MobileImposter.js';
+import { CloudflareDetector } from './CloudflareDetector.js';
+import { CaptchaSolver } from './CaptchaSolver.js';
+import { SessionPersistence } from './SessionPersistence.js';
 
 export interface DirectScriptTask {
   id: string;
@@ -889,6 +893,270 @@ export class DirectMobileScriptService {
         }
       };
 
+      // ========================================
+      // 🚀 MOBILE IMPOSTER - Human-like Behaviors
+      // ========================================
+
+      const imposter = new MobileImposter();
+
+      const humanHelpers = {
+        /**
+         * Human-like tap with random offset and delays
+         * Usage: await human.tap(x, y)
+         */
+        tap: async (x: number, y: number, options?: {
+          preTapDelay?: [number, number];
+          postTapDelay?: [number, number];
+          offsetRange?: number;
+        }) => {
+          log(`[HUMAN] Tapping at (${x}, ${y}) with human-like behavior`);
+          await imposter.humanTap(helpers, x, y, options);
+        },
+
+        /**
+         * Human-like typing with variable speed
+         * Usage: await human.type('hello world')
+         */
+        type: async (text: string, options?: {
+          charDelay?: [number, number];
+          pauseChance?: number;
+        }) => {
+          log(`[HUMAN] Typing "${text}" with human-like speed`);
+          await imposter.humanType(helpers, text, options);
+        },
+
+        /**
+         * Human-like swipe with Bézier curve
+         * Usage: await human.swipe(x1, y1, x2, y2)
+         */
+        swipe: async (x1: number, y1: number, x2: number, y2: number, options?: {
+          addCurve?: boolean;
+          wobble?: boolean;
+        }) => {
+          log(`[HUMAN] Swiping from (${x1}, ${y1}) to (${x2}, ${y2}) with curve`);
+          await imposter.humanSwipe(helpers, x1, y1, x2, y2, options);
+        },
+
+        /**
+         * Human-like scroll
+         * Usage: await human.scroll(300) // scroll down 300px
+         */
+        scroll: async (distance: number, options?: {
+          centerX?: number;
+          startY?: number;
+        }) => {
+          log(`[HUMAN] Scrolling ${distance}px with human-like behavior`);
+          await imposter.humanScroll(helpers, distance, options);
+        },
+
+        /**
+         * Quick tap (less delay)
+         */
+        quickTap: async (x: number, y: number) => {
+          log(`[HUMAN] Quick tap at (${x}, ${y})`);
+          await imposter.quickTap(helpers, x, y);
+        },
+
+        /**
+         * Slow tap (more careful)
+         */
+        slowTap: async (x: number, y: number) => {
+          log(`[HUMAN] Slow tap at (${x}, ${y})`);
+          await imposter.slowTap(helpers, x, y);
+        },
+
+        /**
+         * Thinking delay (800-2000ms)
+         */
+        think: async () => {
+          log(`[HUMAN] Thinking...`);
+          await imposter.thinkingDelay();
+        },
+
+        /**
+         * Reading delay based on text length
+         */
+        read: async (textLength: number) => {
+          log(`[HUMAN] Reading ${textLength} characters...`);
+          await imposter.readingDelay(textLength);
+        },
+
+        /**
+         * Random delay with Gaussian distribution
+         */
+        delay: async (min: number, max: number) => {
+          log(`[HUMAN] Random delay ${min}-${max}ms`);
+          await imposter.humanDelay(min, max);
+        },
+
+        /**
+         * Random offset
+         */
+        randomOffset: (min: number, max: number) => {
+          return imposter.randomOffset(min, max);
+        },
+
+        /**
+         * Idle behavior (random movements)
+         */
+        idle: async (duration: number = 3000) => {
+          log(`[HUMAN] Idle behavior for ${duration}ms`);
+          await imposter.idleBehavior(helpers, duration);
+        }
+      };
+
+      // ========================================
+      // 🛡️ CLOUDFLARE & CAPTCHA HELPERS
+      // ========================================
+
+      const captchaSolver = new CaptchaSolver('2captcha'); // Default to 2Captcha
+
+      const cloudflare = {
+        /**
+         * Detect Cloudflare challenge
+         * Usage: const challenge = await cloudflare.detect()
+         */
+        detect: async () => {
+          log(`[CLOUDFLARE] Detecting challenge...`);
+          const challenge = await CloudflareDetector.detectInScript(helpers);
+
+          if (challenge.detected) {
+            log(`[CLOUDFLARE] ⚠️ ${challenge.type} challenge detected!`);
+          } else {
+            log(`[CLOUDFLARE] ✅ No challenge detected`);
+          }
+
+          return challenge;
+        },
+
+        /**
+         * Wait for Cloudflare JS challenge to auto-pass
+         * Usage: await cloudflare.wait()
+         */
+        wait: async (timeout: number = 30000) => {
+          log(`[CLOUDFLARE] Waiting for challenge to pass (timeout: ${timeout}ms)...`);
+          const passed = await CloudflareDetector.waitForChallengePass(helpers, { timeout });
+
+          if (passed) {
+            log(`[CLOUDFLARE] ✅ Challenge passed!`);
+          } else {
+            log(`[CLOUDFLARE] ⏰ Timeout - challenge still present`);
+          }
+
+          return passed;
+        },
+
+        /**
+         * Solve Cloudflare Turnstile captcha via API
+         * Usage: const solution = await cloudflare.solve({ sitekey, pageurl })
+         */
+        solve: async (options: { sitekey?: string; pageurl?: string; type?: string }) => {
+          log(`[CLOUDFLARE] Solving captcha via API...`);
+
+          const result = await captchaSolver.solve({
+            type: (options.type as any) || 'turnstile',
+            sitekey: options.sitekey,
+            pageurl: options.pageurl
+          });
+
+          if (result.success) {
+            log(`[CLOUDFLARE] ✅ Captcha solved! Token: ${result.solution?.substring(0, 20)}...`);
+            log(`[CLOUDFLARE] Cost: $${result.cost}, Time: ${result.solveTime}ms`);
+          } else {
+            log(`[CLOUDFLARE] ❌ Solve failed: ${result.error}`);
+          }
+
+          return result;
+        },
+
+        /**
+         * Auto-handle Cloudflare challenge
+         * Detects challenge type and handles automatically
+         * Usage: await cloudflare.handle()
+         * Note: solveIfNeeded defaults to FALSE (free mode)
+         *       Set to TRUE to use paid API solving
+         */
+        handle: async (options?: { timeout?: number; solveIfNeeded?: boolean }) => {
+          const { timeout = 30000, solveIfNeeded = false } = options || {};  // ⭐ Default FALSE = FREE!
+
+          log(`[CLOUDFLARE] Auto-handling challenge...`);
+
+          // Step 1: Detect
+          const challenge = await CloudflareDetector.detectInScript(helpers);
+
+          if (!challenge.detected) {
+            log(`[CLOUDFLARE] No challenge detected, continuing...`);
+            return { success: true, action: 'none' };
+          }
+
+          log(`[CLOUDFLARE] Detected: ${challenge.type}`);
+
+          // Step 2: Handle based on type
+          if (challenge.type === 'javascript') {
+            // JavaScript challenge - wait for auto-pass
+            log(`[CLOUDFLARE] JavaScript challenge - waiting for auto-pass...`);
+            const passed = await CloudflareDetector.waitForChallengePass(helpers, { timeout });
+
+            return {
+              success: passed,
+              action: 'waited',
+              type: 'javascript'
+            };
+
+          } else if (challenge.type === 'turnstile' && solveIfNeeded) {
+            // Turnstile captcha - solve via API
+            log(`[CLOUDFLARE] Turnstile captcha - solving via API...`);
+
+            if (!challenge.sitekey) {
+              log(`[CLOUDFLARE] ❌ Cannot solve - no sitekey found`);
+              return { success: false, action: 'failed', error: 'No sitekey' };
+            }
+
+            const result = await captchaSolver.solve({
+              type: 'turnstile',
+              sitekey: challenge.sitekey,
+              pageurl: challenge.url || 'https://twitter.com'
+            });
+
+            if (result.success) {
+              log(`[CLOUDFLARE] ✅ Captcha solved! Apply token manually or reload page.`);
+              return {
+                success: true,
+                action: 'solved',
+                type: 'turnstile',
+                solution: result.solution
+              };
+            } else {
+              log(`[CLOUDFLARE] ❌ Solve failed: ${result.error}`);
+              return {
+                success: false,
+                action: 'failed',
+                error: result.error
+              };
+            }
+
+          } else if (challenge.type === 'blocked') {
+            log(`[CLOUDFLARE] ❌ Blocked by Cloudflare - cannot bypass automatically`);
+            return {
+              success: false,
+              action: 'blocked',
+              type: 'blocked'
+            };
+          }
+
+          return { success: false, action: 'unknown' };
+        },
+
+        /**
+         * Check API balance
+         */
+        getBalance: async () => {
+          const balance = await captchaSolver.getBalance();
+          log(`[CLOUDFLARE] API Balance: $${balance}`);
+          return balance;
+        }
+      };
+
       // Execute user script với access đến helpers
       log(`Preparing to execute user script...`);
       log(`Script length: ${task.scriptCode.length} characters`);
@@ -959,9 +1227,9 @@ export class DirectMobileScriptService {
       const startTime = Date.now();
 
       try {
-        // Execute script with helpers, log, and profile context (use sanitized version)
-        const scriptFunction = new AsyncFunction('helpers', 'log', 'profile', sanitizedScript);
-        const result = await scriptFunction(helpers, log, profile);
+        // Execute script with helpers, human, cloudflare, log, and profile context (use sanitized version)
+        const scriptFunction = new AsyncFunction('helpers', 'human', 'cloudflare', 'log', 'profile', sanitizedScript);
+        const result = await scriptFunction(helpers, humanHelpers, cloudflare, log, profile);
         const duration = Date.now() - startTime;
 
         log(`Script execution completed successfully in ${duration}ms`);

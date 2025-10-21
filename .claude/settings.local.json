@@ -38,7 +38,10 @@
       "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" setprop --name \"LDPlayer-13\" --key \"adb.debug\" --value \"1\")",
       "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" reboot --name \"LDPlayer-13\")",
       "Bash(npx pm2 delete all)",
-      "Bash(node dist/index.js)"
+      "Bash(node dist/index.js)",
+      "Bash(cat /d/BArmy/Worker-mobile/data/profiles/8.json)",
+      "Bash(curl -s -X POST http://localhost:5051/api/profiles/8/launch)",
+      "Bash(\"D:\\LDPlayer\\LDPlayer9\\ldconsole.exe\" getprop --name \"Instance_3_8\" --key \"adb.debug\")"
     ],
     "deny": [],
     "ask": []

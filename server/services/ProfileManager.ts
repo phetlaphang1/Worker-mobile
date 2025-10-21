@@ -405,6 +405,29 @@ export class ProfileManager {
     }
   }
 
+  /**
+   * Check if instance is currently running
+   * @param instanceName - Name of the instance to check
+   * @returns true if instance is running, false otherwise
+   */
+  async isInstanceRunning(instanceName: string): Promise<boolean> {
+    try {
+      // Get running instances list from ldconsole using direct command
+      const util = await import('util');
+      const childProcess = await import('child_process');
+      const execAsync = util.promisify(childProcess.exec);
+
+      const ldConsolePath = this.controller['ldConsolePath'];
+      const result = await execAsync(`"${ldConsolePath}" runninglist`);
+      const runningInstances = result.stdout.trim().split('\n').map((line: string) => line.trim()).filter(Boolean);
+
+      return runningInstances.includes(instanceName);
+    } catch (error) {
+      logger.error(`Failed to check if instance ${instanceName} is running:`, error);
+      return false;
+    }
+  }
+
   // Delete profile
   async deleteProfile(profileId: number): Promise<void> {
     try {

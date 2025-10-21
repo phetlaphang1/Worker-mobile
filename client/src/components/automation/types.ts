@@ -1,7 +1,11 @@
 // Node types
 export type NodeKind = "GoTo" | "Type" | "Click" | "MultiType" | "If" | "Else" | "Wait" | "Sleep" | "For" | "While" | "Variable" | "Extract" | "Navigation" | "SwitchFrame" | "SwitchTab" | "ScrollTo" | "Select" | "Loop" | "EndLoop" | "DataProcess" | "Log" | "HttpRequest" | "AI" | "CaptchaSolver" |
   // Mobile automation nodes
-  "MobileTap" | "MobileTapByText" | "MobileSwipe" | "MobileScroll" | "MobileLongPress" | "MobileDoubleTap" | "MobilePinch" | "MobileBack" | "MobileHome" | "MobileTypeText" | "MobileWait" | "MobileScreenshot" | "MobileOpenApp";
+  "MobileTap" | "MobileTapByText" | "MobileSwipe" | "MobileScroll" | "MobileLongPress" | "MobileDoubleTap" | "MobilePinch" | "MobileBack" | "MobileHome" | "MobileTypeText" | "MobileWait" | "MobileScreenshot" | "MobileOpenApp" |
+  // Human behavior nodes (MobileImposter)
+  "HumanTap" | "HumanQuickTap" | "HumanSlowTap" | "HumanType" | "HumanSwipe" | "HumanScroll" | "HumanThink" | "HumanRead" | "HumanDelay" | "HumanIdle" |
+  // Cloudflare handling nodes
+  "CloudflareDetect" | "CloudflareWait" | "CloudflareHandle" | "CloudflareSolve";
 
 // Cấu hình của từng node
 export type NodeData = {
@@ -147,6 +151,54 @@ export type NodeData = {
     // MobileOpenApp
     appPackageName?: string;
     appName?: string;
+    // HumanTap (all variants: tap, quickTap, slowTap)
+    humanTapX?: number;
+    humanTapY?: number;
+    humanTapVariant?: "tap" | "quickTap" | "slowTap";
+    humanTapOffsetRange?: number;
+    humanPreTapDelayMin?: number;
+    humanPreTapDelayMax?: number;
+    humanPostTapDelayMin?: number;
+    humanPostTapDelayMax?: number;
+    // HumanType
+    humanTypeText?: string;
+    humanCharDelayMin?: number;
+    humanCharDelayMax?: number;
+    humanPauseChance?: number;
+    // HumanSwipe
+    humanSwipeX1?: number;
+    humanSwipeY1?: number;
+    humanSwipeX2?: number;
+    humanSwipeY2?: number;
+    humanSwipeDuration?: number;
+    humanSwipeCurve?: boolean;
+    // HumanScroll
+    humanScrollDistance?: number;
+    humanScrollDuration?: number;
+    // HumanThink
+    humanThinkMin?: number;
+    humanThinkMax?: number;
+    // HumanRead
+    humanReadTextLength?: number;
+    humanReadWpm?: number;
+    // HumanDelay
+    humanDelayMin?: number;
+    humanDelayMax?: number;
+    // HumanIdle
+    humanIdleDuration?: number;
+    humanIdleMovements?: number;
+    // CloudflareDetect
+    cloudflareDetectLog?: boolean;
+    // CloudflareWait
+    cloudflareWaitTimeout?: number;
+    cloudflareWaitCheckInterval?: number;
+    // CloudflareHandle
+    cloudflareHandleTimeout?: number;
+    cloudflareHandleSolveIfNeeded?: boolean;
+    // CloudflareSolve
+    cloudflareSolveProvider?: "2captcha" | "capsolver" | "anticaptcha";
+    cloudflareSolveApiKey?: string;
+    cloudflareSolveTimeout?: number;
   };
 };
 

@@ -398,6 +398,402 @@ export function MobileNodeEditor({
           </div>
         );
 
+      // Human behavior nodes
+      case "HumanTap":
+      case "HumanQuickTap":
+      case "HumanSlowTap":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Tọa độ X</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanTapX || 360}
+                onChange={(e) => updateConfig("humanTapX", Number(e.target.value))}
+                placeholder="360"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tọa độ Y</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanTapY || 640}
+                onChange={(e) => updateConfig("humanTapY", Number(e.target.value))}
+                placeholder="640"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Offset Range (px)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanTapOffsetRange || 15}
+                onChange={(e) => updateConfig("humanTapOffsetRange", Number(e.target.value))}
+                placeholder="15"
+              />
+              <p className="text-xs text-gray-500">Random offset for natural variation</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label>Pre-delay Min (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanPreTapDelayMin || 50}
+                  onChange={(e) => updateConfig("humanPreTapDelayMin", Number(e.target.value))}
+                  placeholder="50"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Pre-delay Max (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanPreTapDelayMax || 150}
+                  onChange={(e) => updateConfig("humanPreTapDelayMax", Number(e.target.value))}
+                  placeholder="150"
+                />
+              </div>
+            </div>
+          </>
+        );
+
+      case "HumanType":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Text to Type</Label>
+              <Input
+                type="text"
+                value={editedData.config?.humanTypeText || ""}
+                onChange={(e) => updateConfig("humanTypeText", e.target.value)}
+                placeholder="Enter text..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label>Char Delay Min (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanCharDelayMin || 80}
+                  onChange={(e) => updateConfig("humanCharDelayMin", Number(e.target.value))}
+                  placeholder="80"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Char Delay Max (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanCharDelayMax || 200}
+                  onChange={(e) => updateConfig("humanCharDelayMax", Number(e.target.value))}
+                  placeholder="200"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Pause Chance (0-1)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editedData.config?.humanPauseChance || 0.03}
+                onChange={(e) => updateConfig("humanPauseChance", Number(e.target.value))}
+                placeholder="0.03"
+              />
+              <p className="text-xs text-gray-500">Probability of random pauses (3% = 0.03)</p>
+            </div>
+          </>
+        );
+
+      case "HumanSwipe":
+        return (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Start X</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanSwipeX1 || 360}
+                  onChange={(e) => updateConfig("humanSwipeX1", Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Start Y</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanSwipeY1 || 800}
+                  onChange={(e) => updateConfig("humanSwipeY1", Number(e.target.value))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>End X</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanSwipeX2 || 360}
+                  onChange={(e) => updateConfig("humanSwipeX2", Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>End Y</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanSwipeY2 || 400}
+                  onChange={(e) => updateConfig("humanSwipeY2", Number(e.target.value))}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Duration (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanSwipeDuration || 500}
+                onChange={(e) => updateConfig("humanSwipeDuration", Number(e.target.value))}
+              />
+              <p className="text-xs text-gray-500">Uses Bézier curve for natural movement</p>
+            </div>
+          </>
+        );
+
+      case "HumanScroll":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Distance (px)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanScrollDistance || 300}
+                onChange={(e) => updateConfig("humanScrollDistance", Number(e.target.value))}
+                placeholder="300"
+              />
+              <p className="text-xs text-gray-500">Positive = scroll down, Negative = scroll up</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Duration (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanScrollDuration || 500}
+                onChange={(e) => updateConfig("humanScrollDuration", Number(e.target.value))}
+                placeholder="500"
+              />
+            </div>
+          </>
+        );
+
+      case "HumanThink":
+        return (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label>Min Delay (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanThinkMin || 800}
+                  onChange={(e) => updateConfig("humanThinkMin", Number(e.target.value))}
+                  placeholder="800"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Max Delay (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanThinkMax || 2000}
+                  onChange={(e) => updateConfig("humanThinkMax", Number(e.target.value))}
+                  placeholder="2000"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">Natural thinking pause before action</p>
+          </>
+        );
+
+      case "HumanRead":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Text Length (characters)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanReadTextLength || 100}
+                onChange={(e) => updateConfig("humanReadTextLength", Number(e.target.value))}
+                placeholder="100"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Reading Speed (WPM)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanReadWpm || 200}
+                onChange={(e) => updateConfig("humanReadWpm", Number(e.target.value))}
+                placeholder="200"
+              />
+              <p className="text-xs text-gray-500">Words per minute (average: 200-250)</p>
+            </div>
+          </>
+        );
+
+      case "HumanDelay":
+        return (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label>Min Delay (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanDelayMin || 500}
+                  onChange={(e) => updateConfig("humanDelayMin", Number(e.target.value))}
+                  placeholder="500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Max Delay (ms)</Label>
+                <Input
+                  type="number"
+                  value={editedData.config?.humanDelayMax || 1500}
+                  onChange={(e) => updateConfig("humanDelayMax", Number(e.target.value))}
+                  placeholder="1500"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">Uses Gaussian distribution for realistic timing</p>
+          </>
+        );
+
+      case "HumanIdle":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Duration (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanIdleDuration || 5000}
+                onChange={(e) => updateConfig("humanIdleDuration", Number(e.target.value))}
+                placeholder="5000"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Random Movements</Label>
+              <Input
+                type="number"
+                value={editedData.config?.humanIdleMovements || 3}
+                onChange={(e) => updateConfig("humanIdleMovements", Number(e.target.value))}
+                placeholder="3"
+              />
+              <p className="text-xs text-gray-500">Simulates random micro-movements during idle</p>
+            </div>
+          </>
+        );
+
+      // Cloudflare nodes
+      case "CloudflareDetect":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editedData.config?.cloudflareDetectLog ?? true}
+                  onChange={(e) => updateConfig("cloudflareDetectLog", e.target.checked)}
+                  className="rounded"
+                />
+                Log detection results
+              </Label>
+            </div>
+            <p className="text-xs text-gray-500">Detects Cloudflare challenge type (JS, Turnstile, Blocked)</p>
+          </>
+        );
+
+      case "CloudflareWait":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Timeout (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.cloudflareWaitTimeout || 30000}
+                onChange={(e) => updateConfig("cloudflareWaitTimeout", Number(e.target.value))}
+                placeholder="30000"
+              />
+              <p className="text-xs text-gray-500">Max time to wait for challenge to pass</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Check Interval (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.cloudflareWaitCheckInterval || 2000}
+                onChange={(e) => updateConfig("cloudflareWaitCheckInterval", Number(e.target.value))}
+                placeholder="2000"
+              />
+              <p className="text-xs text-gray-500">How often to check if challenge passed</p>
+            </div>
+          </>
+        );
+
+      case "CloudflareHandle":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Timeout (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.cloudflareHandleTimeout || 30000}
+                onChange={(e) => updateConfig("cloudflareHandleTimeout", Number(e.target.value))}
+                placeholder="30000"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editedData.config?.cloudflareHandleSolveIfNeeded ?? false}
+                  onChange={(e) => updateConfig("cloudflareHandleSolveIfNeeded", e.target.checked)}
+                  className="rounded"
+                />
+                Use paid API if needed (Turnstile)
+              </Label>
+              <p className="text-xs text-gray-500">Default: FREE mode (wait for JS challenges only)</p>
+            </div>
+          </>
+        );
+
+      case "CloudflareSolve":
+        return (
+          <>
+            <div className="space-y-2">
+              <Label>Captcha Provider</Label>
+              <Select
+                value={editedData.config?.cloudflareSolveProvider || "2captcha"}
+                onValueChange={(value) => updateConfig("cloudflareSolveProvider", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="2captcha">2Captcha</SelectItem>
+                  <SelectItem value="capsolver">CapSolver</SelectItem>
+                  <SelectItem value="anticaptcha">Anti-Captcha</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>API Key</Label>
+              <Input
+                type="password"
+                value={editedData.config?.cloudflareSolveApiKey || ""}
+                onChange={(e) => updateConfig("cloudflareSolveApiKey", e.target.value)}
+                placeholder="Enter API key..."
+              />
+              <p className="text-xs text-gray-500">Cost: ~$0.002 per solve</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Timeout (ms)</Label>
+              <Input
+                type="number"
+                value={editedData.config?.cloudflareSolveTimeout || 120000}
+                onChange={(e) => updateConfig("cloudflareSolveTimeout", Number(e.target.value))}
+                placeholder="120000"
+              />
+            </div>
+          </>
+        );
+
       default:
         return (
           <div className="text-center text-gray-500 py-4">
