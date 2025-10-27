@@ -11,6 +11,7 @@ import { mockSettings, mockStatistics } from './mockData.js';
 import { getAutoInstallApps } from '../config/apps.config.js';
 
 import DirectMobileScriptService from '../services/DirectMobileScriptService.js';
+import TaskQueue from '../services/TaskQueue.js';
 
 import UIInspectorService from '../services/UIInspectorService.js';
 import DeviceMonitor from '../services/DeviceMonitor.js';
@@ -39,6 +40,9 @@ interface RouteServices {
 
 export function setupRoutes(app: Express, services: RouteServices) {
   const { ldPlayerController, profileManager, taskExecutor, scriptExecutor, appiumScriptService, directScriptService, uiInspectorService, deviceMonitor, fingerprintService, isolationService, sessionManager, actionRecorder } = services;
+
+  // Initialize TaskQueue for PM2 Workers
+  const taskQueue = TaskQueue.getInstance();
 
   // Setup authentication routes first
   setupAuthRoutes(app);
@@ -1193,8 +1197,8 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // Run All Profiles with Scripts (Launch + Execute Scripts)
   app.post('/api/profiles/run-all-with-scripts', async (req: Request, res: Response) => {
     try {
-      // ⚠️ FORCE: Run ALL profiles sequentially (ignore client params)
-      const { onlyInactive = false, delay = 2000, maxConcurrent = 1, launchFirst = true } = req.body;
+      // Run profiles in parallel (up to 10 concurrent)
+      const { onlyInactive = false, delay = 2000, maxConcurrent = 10, launchFirst = true } = req.body;
 
       logger.info(`[API] Run All requested with params: onlyInactive=${onlyInactive}, delay=${delay}, maxConcurrent=${maxConcurrent}, launchFirst=${launchFirst}`);
 
@@ -1525,14 +1529,10 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // ============================================
 
   // Execute JavaScript code using ADB directly (like Puppeteer!)
+  // NOW USES TaskQueue for PM2 Workers!
   app.post('/api/direct/execute', async (req: Request, res: Response) => {
     try {
       console.log('[DEBUG API] /api/direct/execute called');
-
-      if (!directScriptService) {
-        console.error('[DEBUG API] DirectScriptService not initialized!');
-        return res.status(500).json({ error: 'Direct Script Service not initialized' });
-      }
 
       const { profileId, scriptCode } = req.body;
       console.log(`[DEBUG API] Request: profileId=${profileId}, scriptLength=${scriptCode?.length || 0}`);
@@ -1542,9 +1542,23 @@ export function setupRoutes(app: Express, services: RouteServices) {
         return res.status(400).json({ error: 'profileId and scriptCode are required' });
       }
 
-      console.log(`[DEBUG API] Queuing script for profile ${profileId}...`);
-      const task = await directScriptService.queueScript(scriptCode, profileId);
-      console.log(`[DEBUG API] Script queued successfully: taskId=${task.id}, status=${task.status}`);
+      // Add task to queue - PM2 workers will pick it up
+      console.log(`[DEBUG API] Adding script task to queue for profile ${profileId}...`);
+      const task = taskQueue.addTask({
+        profileId,
+        type: 'script',
+        payload: {
+          scriptContent: scriptCode
+        }
+      });
+      console.log(`[DEBUG API] Task added to queue: taskId=${task.id}, status=${task.status}`);
+
+      // Also execute via DirectScriptService for backward compatibility
+      // (until PM2 workers are fully integrated)
+      if (directScriptService) {
+        console.log(`[DEBUG API] Also queuing via DirectScriptService for immediate execution...`);
+        await directScriptService.queueScript(scriptCode, profileId);
+      }
 
       res.json({ success: true, task });
     } catch (error) {
@@ -3129,6 +3143,135 @@ export function setupRoutes(app: Express, services: RouteServices) {
     } catch (error) {
       logger.error('Error clearing fingerprint cache:', error);
       res.status(500).json({ error: 'Failed to clear fingerprint cache' });
+    }
+  });
+
+  // ========================================
+  // PM2 Process Management Routes
+  // ========================================
+
+  /**
+   * Get PM2 status for a specific instance
+   */
+  app.get('/api/pm2/instance/:profileId/status', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const profileId = parseInt(req.params.profileId);
+      const status = await PM2Service.getInstanceStatus(profileId);
+
+      res.json({
+        success: true,
+        status
+      });
+    } catch (error) {
+      logger.error('Error getting PM2 instance status:', error);
+      res.status(500).json({ error: 'Failed to get PM2 status' });
+    }
+  });
+
+  /**
+   * Get PM2 status for all instances
+   */
+  app.get('/api/pm2/instances/status', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const instances = await PM2Service.getAllInstancesStatus();
+
+      res.json({
+        success: true,
+        instances
+      });
+    } catch (error) {
+      logger.error('Error getting all PM2 instances status:', error);
+      res.status(500).json({ error: 'Failed to get PM2 statuses' });
+    }
+  });
+
+  /**
+   * Start PM2 process for an instance
+   */
+  app.post('/api/pm2/instance/:profileId/start', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const profileId = parseInt(req.params.profileId);
+
+      // Get profile info
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      const result = await PM2Service.startInstance(profileId, profile.instanceName, profile.port);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Error starting PM2 instance:', error);
+      res.status(500).json({ error: 'Failed to start PM2 instance' });
+    }
+  });
+
+  /**
+   * Stop PM2 process for an instance
+   */
+  app.post('/api/pm2/instance/:profileId/stop', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const profileId = parseInt(req.params.profileId);
+      const result = await PM2Service.stopInstance(profileId);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Error stopping PM2 instance:', error);
+      res.status(500).json({ error: 'Failed to stop PM2 instance' });
+    }
+  });
+
+  /**
+   * Restart PM2 process for an instance
+   */
+  app.post('/api/pm2/instance/:profileId/restart', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const profileId = parseInt(req.params.profileId);
+      const result = await PM2Service.restartInstance(profileId);
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Error restarting PM2 instance:', error);
+      res.status(500).json({ error: 'Failed to restart PM2 instance' });
+    }
+  });
+
+  /**
+   * Stop all PM2 instances
+   */
+  app.post('/api/pm2/instances/stop-all', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const result = await PM2Service.stopAllInstances();
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Error stopping all PM2 instances:', error);
+      res.status(500).json({ error: 'Failed to stop all PM2 instances' });
+    }
+  });
+
+  /**
+   * Get PM2 system info
+   */
+  app.get('/api/pm2/system/info', async (req: Request, res: Response) => {
+    try {
+      const { PM2Service } = await import('../services/PM2Service.js');
+      const info = await PM2Service.getSystemInfo();
+
+      res.json({
+        success: true,
+        info
+      });
+    } catch (error) {
+      logger.error('Error getting PM2 system info:', error);
+      res.status(500).json({ error: 'Failed to get PM2 system info' });
     }
   });
 }

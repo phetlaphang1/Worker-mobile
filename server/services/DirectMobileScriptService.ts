@@ -1262,6 +1262,15 @@ export class DirectMobileScriptService {
   }
 
   /**
+   * Clear all pending and running tasks (for server restart)
+   */
+  clearAllTasks(): void {
+    logger.info('[DirectScriptService] Clearing all tasks');
+    this.scriptQueue = [];
+    this.runningScripts.clear();
+  }
+
+  /**
    * Queue script để execute
    * Auto-clears old completed/failed tasks for the same profile before queueing new task
    */

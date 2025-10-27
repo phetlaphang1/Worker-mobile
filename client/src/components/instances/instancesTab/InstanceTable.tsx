@@ -22,6 +22,7 @@ import {
   mapLegacyStatus
 } from '../../modals/executionColumn';
 import { formatExecutionTimeAgo } from './instanceUtils';
+import { PM2Controls } from '../PM2Controls';
 
 interface InstanceTableProps {
   profiles: Profile[];
@@ -232,48 +233,54 @@ export const InstanceTable: React.FC<InstanceTableProps> = ({
                 </div>
               </TableCell>
 
-              {/* Task Column - Script Execution Status */}
+              {/* Task Column - Script Execution Status & PM2 Status */}
               <TableCell className="text-sm text-left py-1">
-                {(() => {
-                  const taskStatus = (profile as any).taskStatus;
-                  if (!taskStatus || taskStatus === 'idle') {
+                <div className="flex flex-col gap-1">
+                  {/* Script Execution Status */}
+                  {(() => {
+                    const taskStatus = (profile as any).taskStatus;
+                    if (!taskStatus || taskStatus === 'idle') {
+                      return (
+                        <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600 border-gray-300">
+                          Idle
+                        </Badge>
+                      );
+                    }
+
+                    if (taskStatus === 'running') {
+                      return (
+                        <Badge variant="default" className="text-xs bg-purple-500 text-white border-purple-600 hover:bg-purple-600 font-semibold animate-pulse">
+                          Running
+                        </Badge>
+                      );
+                    }
+
+                    if (taskStatus === 'completed') {
+                      return (
+                        <Badge variant="default" className="text-xs bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600 font-semibold">
+                          Completed
+                        </Badge>
+                      );
+                    }
+
+                    if (taskStatus === 'failed') {
+                      return (
+                        <Badge variant="destructive" className="text-xs bg-red-500 text-white border-red-600 hover:bg-red-600 font-semibold">
+                          Failed
+                        </Badge>
+                      );
+                    }
+
                     return (
-                      <Badge variant="outline" className="text-xs bg-gray-100 text-gray-600 border-gray-300">
-                        Idle
+                      <Badge variant="outline" className="text-xs">
+                        {taskStatus}
                       </Badge>
                     );
-                  }
+                  })()}
 
-                  if (taskStatus === 'running') {
-                    return (
-                      <Badge variant="default" className="text-xs bg-purple-500 text-white border-purple-600 hover:bg-purple-600 font-semibold animate-pulse">
-                        Running
-                      </Badge>
-                    );
-                  }
-
-                  if (taskStatus === 'completed') {
-                    return (
-                      <Badge variant="default" className="text-xs bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600 font-semibold">
-                        Completed
-                      </Badge>
-                    );
-                  }
-
-                  if (taskStatus === 'failed') {
-                    return (
-                      <Badge variant="destructive" className="text-xs bg-red-500 text-white border-red-600 hover:bg-red-600 font-semibold">
-                        Failed
-                      </Badge>
-                    );
-                  }
-
-                  return (
-                    <Badge variant="outline" className="text-xs">
-                      {taskStatus}
-                    </Badge>
-                  );
-                })()}
+                  {/* PM2 Process Status */}
+                  <PM2Controls profileId={profile.id} isCompact={true} />
+                </div>
               </TableCell>
 
               {/* Handle Column */}

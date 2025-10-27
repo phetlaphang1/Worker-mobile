@@ -14,6 +14,7 @@ import DirectMobileScriptService from './services/DirectMobileScriptService.js';
 import UIInspectorService from './services/UIInspectorService.js';
 import DeviceMonitor from './services/DeviceMonitor.js';
 import FingerprintService from './services/FingerprintService.js';
+import PM2Service from './services/PM2Service.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 import { initializeProxyManager } from './routes/proxy.js';
@@ -357,9 +358,41 @@ async function startServices() {
     await taskExecutor.start();
     logger.info('✅ Task executor started');
 
+    // Clear all pending tasks on startup (fresh start)
+    logger.info('🧹 Clearing pending tasks from previous session...');
+    directScriptService.clearAllTasks();
+    logger.info('✅ All tasks cleared');
+
     // Start device monitor
     await deviceMonitor.start();
     logger.info('✅ Device monitor started');
+
+    // Sync PM2 status with existing profiles
+    logger.info('🔄 Syncing PM2 status with profiles...');
+    try {
+      const pm2Instances = await PM2Service.getAllInstancesStatus();
+      logger.info(`✅ Found ${pm2Instances.length} PM2 instances running`);
+
+      // Auto-start PM2 for active profiles if not already managed
+      const profiles = profileManager.getAllProfiles();
+      const activeProfiles = profiles.filter(p => p.status === 'active' || p.status === 'running');
+
+      for (const profile of activeProfiles) {
+        const existingPM2 = pm2Instances.find(pm2 => pm2.profileId === profile.id);
+        if (!existingPM2) {
+          logger.info(`🚀 Auto-starting PM2 for active profile ${profile.id} (${profile.name})`);
+          try {
+            await PM2Service.startInstance(profile.id, profile.instanceName, profile.port);
+          } catch (error) {
+            logger.warn(`Failed to start PM2 for profile ${profile.id}:`, error);
+          }
+        }
+      }
+
+      logger.info('✅ PM2 sync completed');
+    } catch (error) {
+      logger.warn('PM2 sync failed (PM2 may not be available):', error);
+    }
 
     // Initialize proxy manager from routes (for backward compatibility)
     const routeProxyManager = initializeProxyManager({
@@ -434,6 +467,15 @@ async function gracefulShutdown(signal: string) {
       delay: 2000
     });
     // logger.info(`Stopped ${stopResult.successCount} instances, ${stopResult.failCount} failed`);
+
+    // Step 4.5: Stop all PM2 instances (optional - keep them running if you want)
+    try {
+      logger.info('Stopping PM2 instances...');
+      await PM2Service.stopAllInstances();
+      logger.info('✅ PM2 instances stopped');
+    } catch (error) {
+      logger.warn('Failed to stop PM2 instances:', error);
+    }
 
     // Step 5: Close server
     server.close(() => {

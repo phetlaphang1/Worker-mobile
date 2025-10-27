@@ -49,6 +49,7 @@ export interface MobileProfile {
   };
   status: 'active' | 'inactive' | 'suspended' | 'running';
   canRunScript?: boolean; // Controls whether scripts can be executed on this instance
+  scriptContent?: string; // Mobile automation script content
   createdAt: Date;
   lastUsed?: Date;
   metadata?: Record<string, any>;
@@ -808,7 +809,7 @@ export class ProfileManager {
       skipped?: boolean;
     }>;
   }> {
-    const { onlyInactive = false, delay = 2000, maxConcurrent = 1 } = options || {};  // ← CHANGED defaults
+    const { onlyInactive = false, delay = 2000, maxConcurrent = 10 } = options || {};  // ← Run up to 10 profiles simultaneously
 
     const allProfiles = this.getAllProfiles();
     let successCount = 0;

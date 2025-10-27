@@ -16,6 +16,7 @@ import { InstancePagination } from './instancesTab/InstancePagination';
 import { ScriptModal, DeleteConfirmDialog, ImagePreviewModal, NewInstanceModal, CloneInstanceModal } from '../modals/ProfileModals';
 import { getLastExecutionTime } from './instancesTab/instanceUtils';
 import { useInstanceMutations } from './instancesTab/useInstanceMutations';
+import { PM2Monitor } from './PM2Monitor';
 
 interface InstanceManagerProps {
   profiles: Profile[];
@@ -381,6 +382,11 @@ export default function InstanceManager({
         isRunningAll={runAllMutation.isPending}
         isStoppingAll={stopAllMutation.isPending}
       />
+
+      {/* PM2 System Monitor */}
+      <div className="mb-6">
+        <PM2Monitor />
+      </div>
 
       {filteredAndSortedProfiles.length === 0 ? (
         <div className="text-center py-12">

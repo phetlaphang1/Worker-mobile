@@ -1983,12 +1983,12 @@ export class LDPlayerController {
       const runningListResult = await execAsync(`"${this.ldConsolePath}" runninglist`).catch(() => ({ stdout: '' }));
       const runningInstances = runningListResult.stdout.trim().split('\n').filter((line: string) => line.length > 0);
 
-      // Get all connected ADB devices via LDPlayer's ADB (not system ADB!)
-      // Use ldconsole adb command to get devices from LDPlayer's internal ADB server
-      const devicesResult = await execAsync(`"${this.ldConsolePath}" adb --command "devices"`).catch(() => ({ stdout: '' }));
+      // Get all connected ADB devices via LDPlayer's ADB
+      // Use adb.exe directly instead of ldconsole (ldconsole adb command is broken on Windows)
+      const devicesResult = await execAsync(`"${this.adbPath}" devices`).catch(() => ({ stdout: '' }));
       const connectedAdbPorts = new Set<number>(); // Set of connected ports
 
-      // Parse devices output: "emulator-5572  device"
+      // Parse devices output: "emulator-5572  device" or "127.0.0.1:5643  device"
       for (const line of devicesResult.stdout.trim().split('\n')) {
         const emulatorMatch = line.match(/emulator-(\d+)\s+device/);
         const ipMatch = line.match(/127\.0\.0\.1:(\d+)\s+device/);
@@ -2003,7 +2003,7 @@ export class LDPlayerController {
         }
       }
 
-      logger.info(`Found ${connectedAdbPorts.size} connected ADB devices via ldconsole`);
+      logger.info(`Found ${connectedAdbPorts.size} connected ADB devices`);
 
       // Process each instance
       for (const line of lines) {
