@@ -14,10 +14,40 @@ nul
 public/assets/*.js
 public/assets/*.css
 server/dist/
+client/dist/
 
 # Data files
 data/
+logs/
 
 # Proxy configuration (sensitive)
 proxies.json
 proxies.txt
+
+# PM2 runtime files
+.pm2/
+ecosystem.config.cjs.lock
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Package lock files (optional - uncomment if needed)
+# package-lock.json
+# yarn.lock
