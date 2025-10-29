@@ -118,7 +118,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
 
   app.post('/api/profiles', async (req: Request, res: Response) => {
     try {
-      const { selectedApps, autoRunScripts, autoActivate = true, autoApplyFingerprint = true, fingerprintBrand, ...profileData } = req.body;
+      const { selectedApps, autoRunScripts, autoActivate = true, autoApplyFingerprint = true, fingerprintBrand, autoStartWorker = true, ...profileData } = req.body;
 
       // Validate required fields
       if (!profileData.name) {
@@ -189,6 +189,28 @@ export function setupRoutes(app: Express, services: RouteServices) {
         }
       }
 
+      // Auto-start PM2 worker if requested (default: true)
+      if (autoStartWorker) {
+        logger.info(`Auto-starting worker for profile "${profile.name}" (ID: ${profile.id})...`);
+        try {
+          const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
+          const workerResult = InstanceWorkerService.startWorker(
+            profile.id,
+            profile.instanceName,
+            profile.port
+          );
+
+          if (workerResult.success) {
+            logger.info(`Worker started successfully for profile "${profile.name}": ${workerResult.message}`);
+          } else {
+            logger.warn(`Failed to start worker for profile "${profile.name}": ${workerResult.message}`);
+          }
+        } catch (workerError) {
+          logger.error(`Error starting worker for profile "${profile.name}":`, workerError);
+          // Don't fail the request if worker fails to start
+        }
+      }
+
       res.json({ success: true, profile });
     } catch (error) {
       logger.error('Error creating profile:', error);
@@ -248,7 +270,7 @@ export function setupRoutes(app: Express, services: RouteServices) {
   app.post('/api/profiles/:profileId/clone', async (req: Request, res: Response) => {
     try {
       const profileId = parseInt(req.params.profileId);
-      const { newName, launchAndSetup, autoApplyFingerprint = true, fingerprintBrand } = req.body;
+      const { newName, launchAndSetup, autoApplyFingerprint = true, fingerprintBrand, autoStartWorker = true, autoDetectApps = false } = req.body;
 
       if (!newName) {
         return res.status(400).json({ error: 'newName is required' });
@@ -263,9 +285,32 @@ export function setupRoutes(app: Express, services: RouteServices) {
         {
           launchAndSetup,
           autoApplyFingerprint,
-          fingerprintBrand
+          fingerprintBrand,
+          autoDetectApps
         }
       );
+
+      // Auto-start PM2 worker if requested (default: true)
+      if (autoStartWorker) {
+        logger.info(`Auto-starting worker for cloned profile "${clonedProfile.name}" (ID: ${clonedProfile.id})...`);
+        try {
+          const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
+          const workerResult = InstanceWorkerService.startWorker(
+            clonedProfile.id,
+            clonedProfile.instanceName,
+            clonedProfile.port
+          );
+
+          if (workerResult.success) {
+            logger.info(`Worker started successfully for cloned profile "${clonedProfile.name}": ${workerResult.message}`);
+          } else {
+            logger.warn(`Failed to start worker for cloned profile "${clonedProfile.name}": ${workerResult.message}`);
+          }
+        } catch (workerError) {
+          logger.error(`Error starting worker for cloned profile "${clonedProfile.name}":`, workerError);
+          // Don't fail the request if worker fails to start
+        }
+      }
 
       res.json({
         success: true,

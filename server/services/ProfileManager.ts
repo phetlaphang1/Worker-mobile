@@ -979,6 +979,7 @@ export class ProfileManager {
     launchAndSetup?: boolean;
     autoApplyFingerprint?: boolean; // Auto-apply new fingerprint to clone (default: true)
     fingerprintBrand?: string; // Optional: specify brand for fingerprint
+    autoDetectApps?: boolean; // Auto-detect installed apps from emulator (default: false)
   }): Promise<MobileProfile> {
     const originalProfile = this.profiles.get(profileId);
     if (!originalProfile) {
@@ -1049,6 +1050,51 @@ export class ProfileManager {
       this.controller.getInstance(newInstanceName); // This ensures it's tracked
 
       logger.info(`Profile created for cloned instance (ID: ${newProfileId})`);
+
+      // Sync installed apps from cloned instance to metadata (if enabled)
+      // This ensures UI shows the actual apps that were physically cloned
+      if (options?.autoDetectApps) {
+        try {
+          logger.info(`Auto-detect apps enabled - detecting installed apps in cloned instance ${newInstanceName}...`);
+
+          // Temporarily launch instance to detect apps (required for ADB connection)
+          await this.controller.launchInstance(newInstanceName);
+          await new Promise(resolve => setTimeout(resolve, 8000)); // Wait for instance to fully start
+
+          // Get installed apps from emulator
+          const installedApps = await this.controller.getInstalledAppsByInstance(newInstanceName);
+          logger.info(`Detected ${installedApps.length} installed apps in clone`);
+
+          // Update apps metadata
+          if (installedApps.length > 0) {
+            clonedProfile.apps = {};
+            for (const app of installedApps) {
+              // Use common app key (e.g., "twitter" for com.twitter.android)
+              const appKey = app.packageName.includes('twitter') ? 'twitter' :
+                            app.packageName.includes('instagram') ? 'instagram' :
+                            app.packageName.includes('facebook') ? 'facebook' :
+                            app.packageName.includes('tiktok') ? 'tiktok' :
+                            app.packageName.includes('telegram') ? 'telegram' :
+                            app.appName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+              clonedProfile.apps[appKey] = {
+                installed: true,
+                packageName: app.packageName
+              };
+            }
+            logger.info(`✅ Synced ${installedApps.length} apps to cloned profile metadata`);
+          }
+
+          // Stop instance (will be relaunched later if launchAndSetup=true)
+          await this.controller.stopInstance(newInstanceName);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (syncError) {
+          logger.warn(`Failed to sync apps from clone (continuing anyway):`, syncError);
+          // Don't throw - clone should still succeed even if app sync fails
+        }
+      } else {
+        logger.info(`Auto-detect apps disabled - skipping app detection (apps metadata will be copied from original profile)`);
+      }
     } catch (cloneError) {
       logger.error(`Failed to clone instance: ${cloneError}`);
       throw new Error(`Failed to clone instance ${originalProfile.name}: ${cloneError instanceof Error ? cloneError.message : String(cloneError)}`);
@@ -1074,14 +1120,16 @@ export class ProfileManager {
         });
 
         // Update cloned profile device info
+        // IMPORTANT: Keep resolution/DPI from original profile settings, only change identity
         clonedProfile.device = {
           imei: fingerprint.imei,
           androidId: fingerprint.androidId,
           model: fingerprint.model,
           manufacturer: fingerprint.manufacturer,
           brand: fingerprint.brand,
-          resolution: fingerprint.realResolution, // Save real device resolution
-          dpi: fingerprint.realDpi // Save real device DPI
+          // Preserve original resolution and DPI from cloned instance
+          resolution: originalProfile.device?.resolution || fingerprint.realResolution,
+          dpi: originalProfile.device?.dpi || fingerprint.realDpi
         };
 
         logger.info(`✅ New fingerprint applied to clone: ${fingerprint.brand} ${fingerprint.model} (IMEI: ${fingerprint.imei})`);

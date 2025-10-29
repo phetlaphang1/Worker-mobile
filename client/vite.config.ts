@@ -33,7 +33,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5051',
         changeOrigin: true,
-        timeout: 30000, // 30 second timeout
+        timeout: 180000, // 180 second timeout (match backend activation timeout)
         configure: (proxy, options) => {
           let errorCount = 0;
           let lastErrorTime = 0;
@@ -62,7 +62,7 @@ export default defineConfig({
 
           proxy.on('proxyReq', (proxyReq, req, res) => {
             // Set reasonable timeout for proxy requests
-            proxyReq.setTimeout(30000);
+            proxyReq.setTimeout(180000); // Match proxy timeout
           });
         },
       },
