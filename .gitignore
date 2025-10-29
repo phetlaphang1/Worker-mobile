@@ -17,7 +17,7 @@ server/dist/
 client/dist/
 
 # Data files
-data/
+
 logs/
 
 # Proxy configuration (sensitive)

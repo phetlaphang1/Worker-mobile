@@ -76,26 +76,14 @@ module.exports = {
     },
 
     // ========================================
-    // OPTIONAL: Appium Server (COMMENTED OUT)
-    // Uncomment if you need Appium (not needed with ADB approach)
+    // Instance Workers
     // ========================================
-    // {
-    //   name: 'appium-server',
-    //   script: 'appium',
-    //   args: '--address 127.0.0.1 --port 4723 --allow-cors --log-level info',
-    //   cwd: __dirname,
-    //   instances: 1,
-    //   autorestart: true,
-    //   watch: false,
-    //   max_memory_restart: '500M',
-    //   error_file: './logs/pm2/appium-error.log',
-    //   out_file: './logs/pm2/appium-out.log',
-    //   log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    //   merge_logs: true,
-    //   min_uptime: '10s',
-    //   max_restarts: 10,
-    //   restart_delay: 4000,
-    // },
+    // NOTE: Instance workers are now managed by InstanceWorkerService
+    // instead of PM2 due to Windows environment variable issues.
+    // Workers are started automatically via the API:
+    //   POST /api/pm2/spawn-all-workers
+    // Or individually via:
+    //   POST /api/pm2/instance/:profileId/start
   ],
 
   // ========================================

@@ -344,7 +344,7 @@ export default function InstanceManager({
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="p-6 min-h-screen bg-gray-50">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Skeleton className="h-10 w-64" />
@@ -362,7 +362,7 @@ export default function InstanceManager({
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 min-h-screen bg-gray-50">
       <InstanceControls
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
@@ -377,8 +377,8 @@ export default function InstanceManager({
         deviceMonitorStats={deviceMonitorStats}
         onRefresh={() => refreshStatusMutation.mutate()}
         isRefreshing={refreshStatusMutation.isPending}
-        onRunAll={() => runAllMutation.mutate()}
-        onStopAll={() => stopAllMutation.mutate()}
+        onRunAll={() => runAllMutation.mutate(undefined)}
+        onStopAll={() => stopAllMutation.mutate(undefined)}
         isRunningAll={runAllMutation.isPending}
         isStoppingAll={stopAllMutation.isPending}
       />

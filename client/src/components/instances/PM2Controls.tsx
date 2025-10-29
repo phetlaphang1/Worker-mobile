@@ -34,40 +34,47 @@ export function PM2Controls({ profileId, isCompact = false }: PM2ControlsProps) 
   // Fetch PM2 status
   const fetchPM2Status = async () => {
     try {
+      console.log(`[PM2Controls] Fetching status for profile ${profileId}...`);
       const response = await fetch(`${API_BASE_URL}/api/pm2/instance/${profileId}/status`);
       const data = await response.json();
+      console.log(`[PM2Controls] Status response for profile ${profileId}:`, data);
 
       if (data.success) {
         setPM2Status(data.status);
+        console.log(`[PM2Controls] Profile ${profileId} worker status:`, data.status?.status, `PID: ${data.status?.pid}`);
       }
     } catch (error) {
-      console.error('Failed to fetch PM2 status:', error);
+      console.error(`[PM2Controls] Failed to fetch status for profile ${profileId}:`, error);
     }
   };
 
-  // Auto-refresh PM2 status every 5 seconds
+  // ONLY fetch ONCE on mount - NO POLLING
+  // PM2 status polling causes excessive 304 responses (N profiles × requests)
+  // User actions (start/stop/restart) will manually refetch
   useEffect(() => {
     fetchPM2Status();
-    const interval = setInterval(fetchPM2Status, 5000);
-    return () => clearInterval(interval);
   }, [profileId]);
 
   // Start PM2 process
   const handleStart = async () => {
     setIsLoading(true);
     try {
+      console.log(`[PM2Controls] Starting worker for profile ${profileId}...`);
       const response = await fetch(`${API_BASE_URL}/api/pm2/instance/${profileId}/start`, {
         method: 'POST',
       });
       const data = await response.json();
+      console.log(`[PM2Controls] Start worker response for profile ${profileId}:`, data);
 
       if (data.success) {
         toast({
-          title: 'PM2 Started',
+          title: 'Worker Started',
           description: data.message,
         });
+        console.log(`[PM2Controls] ✅ Worker started successfully for profile ${profileId}`);
         fetchPM2Status();
       } else {
+        console.error(`[PM2Controls] ❌ Failed to start worker for profile ${profileId}:`, data.message);
         toast({
           title: 'Failed to Start',
           description: data.message,
@@ -75,9 +82,10 @@ export function PM2Controls({ profileId, isCompact = false }: PM2ControlsProps) 
         });
       }
     } catch (error) {
+      console.error(`[PM2Controls] ❌ Error starting worker for profile ${profileId}:`, error);
       toast({
         title: 'Error',
-        description: 'Failed to start PM2 process',
+        description: 'Failed to start worker process',
         variant: 'destructive',
       });
     } finally {
@@ -89,18 +97,22 @@ export function PM2Controls({ profileId, isCompact = false }: PM2ControlsProps) 
   const handleStop = async () => {
     setIsLoading(true);
     try {
+      console.log(`[PM2Controls] Stopping worker for profile ${profileId}...`);
       const response = await fetch(`${API_BASE_URL}/api/pm2/instance/${profileId}/stop`, {
         method: 'POST',
       });
       const data = await response.json();
+      console.log(`[PM2Controls] Stop worker response for profile ${profileId}:`, data);
 
       if (data.success) {
         toast({
-          title: 'PM2 Stopped',
+          title: 'Worker Stopped',
           description: data.message,
         });
+        console.log(`[PM2Controls] ✅ Worker stopped successfully for profile ${profileId}`);
         setPM2Status(null);
       } else {
+        console.error(`[PM2Controls] ❌ Failed to stop worker for profile ${profileId}:`, data.message);
         toast({
           title: 'Failed to Stop',
           description: data.message,
@@ -108,9 +120,10 @@ export function PM2Controls({ profileId, isCompact = false }: PM2ControlsProps) 
         });
       }
     } catch (error) {
+      console.error(`[PM2Controls] ❌ Error stopping worker for profile ${profileId}:`, error);
       toast({
         title: 'Error',
-        description: 'Failed to stop PM2 process',
+        description: 'Failed to stop worker process',
         variant: 'destructive',
       });
     } finally {
@@ -122,18 +135,22 @@ export function PM2Controls({ profileId, isCompact = false }: PM2ControlsProps) 
   const handleRestart = async () => {
     setIsLoading(true);
     try {
+      console.log(`[PM2Controls] Restarting worker for profile ${profileId}...`);
       const response = await fetch(`${API_BASE_URL}/api/pm2/instance/${profileId}/restart`, {
         method: 'POST',
       });
       const data = await response.json();
+      console.log(`[PM2Controls] Restart worker response for profile ${profileId}:`, data);
 
       if (data.success) {
         toast({
-          title: 'PM2 Restarted',
+          title: 'Worker Restarted',
           description: data.message,
         });
+        console.log(`[PM2Controls] ✅ Worker restarted successfully for profile ${profileId}`);
         fetchPM2Status();
       } else {
+        console.error(`[PM2Controls] ❌ Failed to restart worker for profile ${profileId}:`, data.message);
         toast({
           title: 'Failed to Restart',
           description: data.message,
@@ -141,9 +158,10 @@ export function PM2Controls({ profileId, isCompact = false }: PM2ControlsProps) 
         });
       }
     } catch (error) {
+      console.error(`[PM2Controls] ❌ Error restarting worker for profile ${profileId}:`, error);
       toast({
         title: 'Error',
-        description: 'Failed to restart PM2 process',
+        description: 'Failed to restart worker process',
         variant: 'destructive',
       });
     } finally {

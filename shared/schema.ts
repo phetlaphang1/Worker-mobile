@@ -2,10 +2,41 @@
 export interface Profile {
   id: number;
   name: string;
+  instanceName: string; // LDPlayer instance name (e.g., "ccccc_13")
+  port: number; // ADB port
+  settings?: {
+    resolution?: string;
+    cpu?: number;
+    memory?: number;
+  };
+  device?: {
+    imei?: string;
+    androidId?: string;
+    model?: string;
+    manufacturer?: string;
+    brand?: string;
+    resolution?: string;
+    dpi?: number;
+  };
+  network?: {
+    useProxy?: boolean;
+    proxyType?: string;
+    proxyHost?: string;
+    proxyPort?: number;
+    proxyUsername?: string;
+    proxyPassword?: string;
+  };
+  apps?: {
+    [key: string]: {
+      installed?: boolean;
+      packageName?: string;
+    };
+  };
+  metadata?: any;
   isHeadless?: boolean;
   isIncognito?: boolean;
   description?: string;
-  browser: string; // android emulator type
+  browser?: string; // android emulator type
   userAgent?: string;
   customUserAgent?: string;
   viewportWidth?: number;
@@ -21,7 +52,7 @@ export interface Profile {
   customField?: any;
   localWorkerId?: number; // Worker ID from Task Center
   localProfileId?: number; // Profile ID from Task Center
-  status: string; // READY, RUNNING, COMPLETED, FAILED
+  status: string; // READY, RUNNING, COMPLETED, FAILED, active, inactive
   createdAt: Date | string;
   updatedAt?: Date | string;
 }

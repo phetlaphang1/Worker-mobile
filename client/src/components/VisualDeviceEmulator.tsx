@@ -62,6 +62,7 @@ export const VisualDeviceEmulator: React.FC<VisualDeviceEmulatorProps> = ({
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
   const [profileData, setProfileData] = useState<any>(null);
   const [isPickingElement, setIsPickingElement] = useState(false); // For element picking mode
+  const [isRecording, setIsRecording] = useState(false); // Recording state
   const [savedScripts, setSavedScripts] = useState<Array<{
     name: string;
     actions: Action[];

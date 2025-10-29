@@ -1,0 +1,26 @@
+# Proxy List Configuration
+# Format: type://[username:password@]host:port
+# Supported types: http, https, socks4, socks5
+
+# HTTP Proxies (no auth)
+http://1.2.3.4:8080
+http://5.6.7.8:3128
+
+# HTTP Proxies (with auth)
+http://user1:pass123@10.20.30.40:8080
+http://user2:pass456@11.22.33.44:3128
+
+# SOCKS5 Proxies
+socks5://192.168.1.100:1080
+socks5://proxyuser:proxypass@192.168.1.101:1080
+
+# HTTPS Proxies
+https://50.60.70.80:443
+https://user:pass@51.61.71.81:8443
+
+# Comments start with #
+# Empty lines are ignored
+
+# Example premium proxy services:
+# http://username:password@proxy1.premiumproxy.com:8080
+# socks5://username:password@proxy2.premiumproxy.com:1080

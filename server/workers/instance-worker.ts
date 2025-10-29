@@ -6,6 +6,9 @@
 
 import TaskQueue, { Task } from '../services/TaskQueue.js';
 import { logger } from '../utils/logger.js';
+import LDPlayerController from '../core/LDPlayerController.js';
+import ProfileManager from '../services/ProfileManager.js';
+import DirectMobileScriptService from '../services/DirectMobileScriptService.js';
 
 interface WorkerConfig {
   profileId: number;
@@ -19,10 +22,18 @@ class InstanceWorker {
   private isRunning: boolean = false;
   private checkInterval: NodeJS.Timeout | null = null;
   private pollInterval: NodeJS.Timeout | null = null;
+  private ldController: LDPlayerController;
+  private profileManager: ProfileManager;
+  private scriptService: DirectMobileScriptService;
 
   constructor(config: WorkerConfig) {
     this.config = config;
     this.taskQueue = TaskQueue.getInstance();
+
+    // Initialize services for this worker
+    this.ldController = new LDPlayerController();
+    this.profileManager = new ProfileManager(this.ldController);
+    this.scriptService = new DirectMobileScriptService(this.ldController, this.profileManager);
 
     logger.info(`[Worker-${config.profileId}] Initialized for instance ${config.instanceName}`);
   }
@@ -34,6 +45,11 @@ class InstanceWorker {
     try {
       this.isRunning = true;
       logger.info(`[Worker-${this.config.profileId}] Starting worker...`);
+
+      // Initialize ProfileManager (load profiles from disk)
+      logger.info(`[Worker-${this.config.profileId}] Initializing ProfileManager...`);
+      await this.profileManager.initialize();
+      logger.info(`[Worker-${this.config.profileId}] ProfileManager initialized`);
 
       // Start health check interval (every 30 seconds)
       this.checkInterval = setInterval(() => {
@@ -108,20 +124,48 @@ class InstanceWorker {
         // Script execution task
         logger.info(`[Worker-${this.config.profileId}] Executing script...`);
 
-        // In a real implementation, this would:
-        // 1. Connect to ADB
-        // 2. Execute the script via DirectMobileScriptService
-        // 3. Return results
+        const scriptContent = task.payload.scriptContent;
+        if (!scriptContent) {
+          throw new Error('No script content provided in task payload');
+        }
 
-        // For now, simulate execution
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        logger.info(`[Worker-${this.config.profileId}] Script length: ${scriptContent.length} chars`);
 
-        this.taskQueue.completeTask(task.id, {
-          success: true,
-          message: 'Script executed successfully (worker simulation)'
-        });
+        // Execute script using this worker's scriptService instance
+        const scriptTask = await this.scriptService.queueScript(scriptContent, this.config.profileId);
 
-        logger.info(`[Worker-${this.config.profileId}] Task ${task.id} completed`);
+        logger.info(`[Worker-${this.config.profileId}] DirectMobileScript task created: ${scriptTask.id}`);
+
+        // Wait for script execution to complete (poll for status)
+        const maxWaitTime = 300000; // 5 minutes max
+        const startTime = Date.now();
+        let scriptCompleted = false;
+
+        while (Date.now() - startTime < maxWaitTime) {
+          const currentTask = this.scriptService.getTask(scriptTask.id);
+
+          if (currentTask?.status === 'completed') {
+            scriptCompleted = true;
+            this.taskQueue.completeTask(task.id, {
+              success: true,
+              message: 'Script executed successfully',
+              logs: currentTask.logs,
+              result: currentTask.result
+            });
+            logger.info(`[Worker-${this.config.profileId}] Script task ${task.id} completed successfully`);
+            break;
+          } else if (currentTask?.status === 'failed') {
+            throw new Error(currentTask.error || 'Script execution failed');
+          }
+
+          // Wait 1 second before checking again
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        if (!scriptCompleted) {
+          throw new Error('Script execution timeout (5 minutes)');
+        }
+
       } else if (task.type === 'command') {
         // Command execution task
         logger.info(`[Worker-${this.config.profileId}] Executing command: ${task.payload.command}`);

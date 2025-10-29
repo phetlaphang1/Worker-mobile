@@ -376,12 +376,25 @@ export class TaskExecutor {
   }
 
   // Task Center integration
+  private taskCenterAvailable: boolean = true;
+  private taskCenterRetryCount: number = 0;
+  private readonly MAX_TASK_CENTER_RETRIES = 3;
+
   private startTaskCenterPolling(): void {
+    // Only start polling if Task Center URL is configured
+    if (!this.config.taskCenterUrl || !this.config.taskCenterApiKey) {
+      logger.info('[TaskExecutor] Task Center not configured, skipping polling');
+      return;
+    }
+
     this.taskCheckInterval = setInterval(async () => {
       try {
         await this.fetchTasksFromCenter();
       } catch (error) {
-        logger.error('Failed to fetch tasks from Task Center:', error);
+        // Don't spam logs if Task Center is consistently unavailable
+        if (this.taskCenterAvailable) {
+          logger.warn('[TaskExecutor] Task Center temporarily unavailable');
+        }
       }
     }, this.config.taskCheckInterval || 30000);
 
@@ -395,7 +408,8 @@ export class TaskExecutor {
     }
 
     try {
-      const response = await axios.get(`${this.config.taskCenterUrl}/api/tasks`, {
+      // taskCenterUrl already includes /api/tasks, so don't add it again
+      const response = await axios.get(this.config.taskCenterUrl, {
         headers: {
           'api-key': this.config.taskCenterApiKey,
           'user-id': this.config.taskCenterUserId || ''
@@ -403,10 +417,18 @@ export class TaskExecutor {
         params: {
           status: 'pending',
           limit: 10
-        }
+        },
+        timeout: 5000 // 5 second timeout
       });
 
       const tasks = response.data.tasks || [];
+
+      // Task Center is available, reset retry count
+      if (!this.taskCenterAvailable) {
+        logger.info('[TaskExecutor] Task Center is now available');
+        this.taskCenterAvailable = true;
+      }
+      this.taskCenterRetryCount = 0;
 
       for (const taskData of tasks) {
         // Map Task Center task to internal task format
@@ -419,14 +441,38 @@ export class TaskExecutor {
         });
       }
 
-      logger.info(`Fetched ${tasks.length} tasks from Task Center`);
-    } catch (error) {
-      logger.error('Error fetching tasks from Task Center:', error);
+      if (tasks.length > 0) {
+        logger.info(`[TaskExecutor] Fetched ${tasks.length} tasks from Task Center`);
+      }
+    } catch (error: any) {
+      // Handle connection errors gracefully
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+        this.taskCenterRetryCount++;
+
+        // Only log the first few failures
+        if (this.taskCenterRetryCount <= this.MAX_TASK_CENTER_RETRIES) {
+          logger.warn(`[TaskExecutor] Task Center unavailable (attempt ${this.taskCenterRetryCount}/${this.MAX_TASK_CENTER_RETRIES})`);
+        }
+
+        // After max retries, mark as unavailable to reduce log spam
+        if (this.taskCenterRetryCount === this.MAX_TASK_CENTER_RETRIES) {
+          this.taskCenterAvailable = false;
+          logger.warn('[TaskExecutor] Task Center marked as unavailable. Will retry silently.');
+        }
+      } else {
+        // Log other types of errors (auth, parsing, etc.)
+        logger.error('[TaskExecutor] Error fetching tasks from Task Center:', error.message);
+      }
     }
   }
 
   private async reportTaskCompletion(task: Task): Promise<void> {
     if (!this.config.taskCenterUrl || !this.config.taskCenterApiKey) {
+      return;
+    }
+
+    // Don't try to report if Task Center is unavailable
+    if (!this.taskCenterAvailable) {
       return;
     }
 
@@ -448,20 +494,25 @@ export class TaskExecutor {
         source: task.source
       };
 
+      // taskCenterUrl already includes /api/tasks, so just append the task ID
       await axios.post(
-        `${this.config.taskCenterUrl}/api/tasks/${task.id}/complete`,
+        `${this.config.taskCenterUrl}/${task.id}/complete`,
         payload,
         {
           headers: {
             'api-key': this.config.taskCenterApiKey,
             'user-id': this.config.taskCenterUserId || ''
-          }
+          },
+          timeout: 5000 // 5 second timeout
         }
       );
 
-      logger.info(`Reported task ${task.id} completion to Task Center`);
-    } catch (error) {
-      logger.error('Error reporting task completion:', error);
+      logger.info(`[TaskExecutor] Reported task ${task.id} completion to Task Center`);
+    } catch (error: any) {
+      // Only log if not a connection error
+      if (error.code !== 'ECONNREFUSED' && error.code !== 'ETIMEDOUT') {
+        logger.error('[TaskExecutor] Error reporting task completion:', error.message);
+      }
     }
   }
 

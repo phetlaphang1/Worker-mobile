@@ -10,7 +10,7 @@ export const useInstanceMutations = () => {
   const launchProfileMutation = useMutation({
     mutationFn: async (params: { profileId: number }) => {
       // Optimistically update the profile status
-      queryClient.setQueryData(["http://localhost:5051/api/profiles"], (oldData: any) => {
+      queryClient.setQueryData(["/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
             ? { ...profile, status: "active" }
@@ -21,7 +21,7 @@ export const useInstanceMutations = () => {
       console.log("Start Running: ");
 
       const response = await fetch(
-        `http://localhost:5051/api/profiles/${params.profileId}/launch`,
+        `/api/profiles/${params.profileId}/launch`,
         { method: "POST" }
       );
 
@@ -57,13 +57,13 @@ export const useInstanceMutations = () => {
       });
 
       // Invalidate all relevant queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/direct/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/direct/tasks"] });
     },
     onError: (error: any, params) => {
       // Update status to inactive on error (instance failed to start)
-      queryClient.setQueryData(["http://localhost:5051/api/profiles"], (oldData: any) => {
+      queryClient.setQueryData(["/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
             ? { ...profile, status: "inactive" }
@@ -82,7 +82,7 @@ export const useInstanceMutations = () => {
   const deleteProfileMutation = useMutation({
     mutationFn: api.profiles.delete,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
       toast({
         title: "Success",
         description: "Instance deleted successfully",
@@ -100,7 +100,7 @@ export const useInstanceMutations = () => {
   const duplicateProfileMutation = useMutation({
     mutationFn: async ({ profile, newName, copyApps }: { profile: Profile; newName: string; copyApps: boolean }) => {
       // Use clone API endpoint
-      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}/clone`, {
+      const response = await fetch(`/api/profiles/${profile.id}/clone`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -117,7 +117,7 @@ export const useInstanceMutations = () => {
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
       toast({
         title: "Instance Cloned",
         description: `Created "${data.profile.name}" successfully`,
@@ -135,7 +135,7 @@ export const useInstanceMutations = () => {
   const stopProfileMutation = useMutation({
     mutationFn: async (params: { profileId: number }) => {
       // Optimistically update the profile status
-      queryClient.setQueryData(["http://localhost:5051/api/profiles"], (oldData: any) => {
+      queryClient.setQueryData(["/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
             ? { ...profile, status: "inactive" }
@@ -146,7 +146,7 @@ export const useInstanceMutations = () => {
       console.log("Stop Running: ", params.profileId);
 
       const response = await fetch(
-        `http://localhost:5051/api/profiles/${params.profileId}/stop`,
+        `/api/profiles/${params.profileId}/stop`,
         { method: "POST" }
       );
 
@@ -166,13 +166,13 @@ export const useInstanceMutations = () => {
       });
 
       // Invalidate all relevant queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/direct/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/direct/tasks"] });
     },
     onError: (error: any, params) => {
       // Keep status as running if stop fails (profile is still active)
-      queryClient.setQueryData(["http://localhost:5051/api/profiles"], (oldData: any) => {
+      queryClient.setQueryData(["/api/profiles"], (oldData: any) => {
         return oldData.map((profile: any) =>
           profile.id === params.profileId
             ? { ...profile, status: "active" }
@@ -194,7 +194,7 @@ export const useInstanceMutations = () => {
       return api.profiles.create(config);
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
       toast({
         title: "Success",
         description: `${data.name} instance created successfully`,
@@ -218,7 +218,7 @@ export const useInstanceMutations = () => {
       content: string;
     }) => {
       const response = await fetch(
-        `http://localhost:5051/api/profiles/${profileId}/script`,
+        `/api/profiles/${profileId}/script`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -235,7 +235,7 @@ export const useInstanceMutations = () => {
         title: "Success",
         description: "Script updated successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
     },
     onError: (error: any) => {
       toast({
@@ -248,7 +248,7 @@ export const useInstanceMutations = () => {
 
   const launchInstanceOnlyMutation = useMutation({
     mutationFn: async (profile: Profile) => {
-      const response = await fetch(`http://localhost:5051/api/profiles/${profile.id}/launch-only`, {
+      const response = await fetch(`/api/profiles/${profile.id}/launch-only`, {
         method: 'POST'
       });
       if (!response.ok) {
@@ -258,8 +258,8 @@ export const useInstanceMutations = () => {
     },
     onSuccess: () => {
       // Invalidate profiles and devices (but not tasks since no script is running)
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/monitor/devices"] });
       toast({
         title: "Instance Launched",
         description: "Instance launched successfully (without running script)",
@@ -276,7 +276,7 @@ export const useInstanceMutations = () => {
 
   const refreshStatusMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch('http://localhost:5051/api/profiles/refresh-status', {
+      const response = await fetch('/api/profiles/refresh-status', {
         method: 'POST'
       });
       if (!response.ok) {
@@ -285,7 +285,7 @@ export const useInstanceMutations = () => {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
       toast({
         title: "Statuses Refreshed",
         description: "All instance statuses have been synced with LDPlayer",
@@ -302,7 +302,7 @@ export const useInstanceMutations = () => {
 
   const runAllMutation = useMutation({
     mutationFn: async (options?: { onlyInactive?: boolean; delay?: number; maxConcurrent?: number }) => {
-      const response = await fetch('http://localhost:5051/api/profiles/run-all-with-scripts', {
+      const response = await fetch('/api/profiles/run-all-with-scripts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -319,8 +319,8 @@ export const useInstanceMutations = () => {
     },
     retry: false,  // ← Don't retry automatically
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/monitor/devices"] });
       toast({
         title: "Run All Complete",
         description: `✅ ${data.successCount} launched, ❌ ${data.failCount} failed, ⏭️ ${data.skippedCount} skipped`,
@@ -337,7 +337,7 @@ export const useInstanceMutations = () => {
 
   const stopAllMutation = useMutation({
     mutationFn: async (options?: { onlyActive?: boolean; delay?: number }) => {
-      const response = await fetch('http://localhost:5051/api/profiles/stop-all', {
+      const response = await fetch('/api/profiles/stop-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -353,8 +353,8 @@ export const useInstanceMutations = () => {
     },
     retry: false,  // ← Don't retry automatically
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
-      queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/monitor/devices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/monitor/devices"] });
       toast({
         title: "Stop All Complete",
         description: `✅ ${data.successCount} stopped, ❌ ${data.failCount} failed, ⏭️ ${data.skippedCount} skipped`,

@@ -23,7 +23,7 @@ interface DeviceStatus {
 export function InstancesTab() {
   const queryClient = useQueryClient();
   const { data: profiles = [], isLoading, refetch } = useQuery<Profile[]>({
-    queryKey: ["http://localhost:5051/api/profiles"],
+    queryKey: ["/api/profiles"],
     queryFn: api.profiles.list,
     // No polling - rely entirely on WebSocket for real-time updates
     // Only refetch when explicitly triggered by user actions or WebSocket events
@@ -38,9 +38,9 @@ export function InstancesTab() {
   // Server-side DeviceMonitor already runs background monitoring every 5s
   // Client only fetches when needed (on mount, after user actions)
   const { data: deviceMonitor } = useQuery({
-    queryKey: ["http://localhost:5051/api/monitor/devices"],
+    queryKey: ["/api/monitor/devices"],
     queryFn: async () => {
-      const response = await fetch('http://localhost:5051/api/monitor/devices');
+      const response = await fetch('/api/monitor/devices');
       if (!response.ok) {
         throw new Error('Failed to fetch device statuses');
       }
@@ -81,7 +81,7 @@ export function InstancesTab() {
         if (message.type === 'profile_status_update') {
           console.log('[WebSocket] Profile status update:', message.data);
           // Invalidate query to trigger refetch
-          queryClient.invalidateQueries({ queryKey: ["http://localhost:5051/api/profiles"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/profiles"] });
         }
       } catch (error) {
         console.error('[WebSocket] Error parsing message:', error);
@@ -107,9 +107,9 @@ export function InstancesTab() {
   // Fetch task statuses from DirectMobileScriptService
   // Only fetch and poll when there are actually running tasks
   const { data: taskStatuses } = useQuery({
-    queryKey: ["http://localhost:5051/api/direct/tasks"],
+    queryKey: ["/api/direct/tasks"],
     queryFn: async () => {
-      const response = await fetch('http://localhost:5051/api/direct/tasks');
+      const response = await fetch('/api/direct/tasks');
       if (!response.ok) {
         throw new Error('Failed to fetch task statuses');
       }

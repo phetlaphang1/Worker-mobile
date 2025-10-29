@@ -1,9 +1,9 @@
 /**
  * PM2 Service
  * Manages PM2 process control for LDPlayer instances
+ * Uses PM2 CLI commands instead of library to avoid Windows compatibility issues
  */
 
-import pm2 from 'pm2';
 import { logger } from '../utils/logger.js';
 import path from 'path';
 
@@ -20,79 +20,6 @@ export interface PM2InstanceStatus {
 
 export class PM2Service {
   private static LOGS_PATH = path.join(process.cwd(), 'logs', 'pm2', 'instances');
-
-  /**
-   * Connect to PM2 daemon
-   * Returns true if connected, false if PM2 not available
-   */
-  private static async connect(): Promise<boolean> {
-    // Use PM2 CLI instead of library to avoid Windows bugs
-    return true; // Always return true, we'll use CLI commands
-
-    /* Original implementation - disabled due to PM2 bug
-    return new Promise((resolve) => {
-      let resolved = false;
-
-      // Set timeout to prevent hanging
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          logger.warn('[PM2Service] PM2 connection timeout (this is OK in dev mode)');
-          // Try to disconnect to clean up any pending connections
-          try {
-            pm2.disconnect();
-          } catch (e) {
-            // Ignore disconnect errors
-          }
-          resolve(false);
-        }
-      }, 3000); // 3 second timeout
-
-      try {
-        pm2.connect((err) => {
-          try {
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(timeout);
-              if (err) {
-                logger.warn('[PM2Service] PM2 daemon not available (this is OK in dev mode)');
-                resolve(false);
-              } else {
-                resolve(true);
-              }
-            }
-          } catch (callbackError) {
-            // Catch any errors in callback execution
-            logger.warn('[PM2Service] Error in PM2 connect callback:', callbackError);
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(timeout);
-              resolve(false);
-            }
-          }
-        });
-      } catch (error) {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          logger.warn('[PM2Service] PM2 not available:', error);
-          resolve(false);
-        }
-      }
-    });
-    */
-  }
-
-  /**
-   * Disconnect from PM2 daemon
-   */
-  private static disconnect(): void {
-    try {
-      pm2.disconnect();
-    } catch (error) {
-      // Ignore disconnect errors
-    }
-  }
 
   /**
    * Get status of a specific instance
@@ -181,80 +108,58 @@ export class PM2Service {
     port: number
   ): Promise<{ success: boolean; message: string }> {
     try {
-      const connected = await this.connect();
-      if (!connected) {
-        return {
-          success: false,
-          message: 'PM2 daemon not available. Start PM2 first: pm2 ls'
-        };
-      }
-
+      const { execSync } = await import('child_process');
       const processName = `instance-${profileId}`;
 
-      // Check if already running
-      const existingStatus = await new Promise<boolean>((resolve) => {
-        pm2.describe(processName, (err, processDescription) => {
-          if (!err && processDescription && processDescription.length > 0) {
-            resolve(true);
-          } else {
-            resolve(false);
-          }
-        });
-      });
-
-      if (existingStatus) {
-        this.disconnect();
+      // Check if already running using CLI
+      const existingStatus = await this.getInstanceStatus(profileId);
+      if (existingStatus && existingStatus.status === 'online') {
         return {
           success: true,
-          message: `Instance ${profileId} is already managed by PM2`
+          message: `Instance ${profileId} is already running`
         };
       }
 
-      // Start new PM2 process (placeholder - will be implemented with worker)
-      return new Promise((resolve) => {
-        pm2.start(
-          {
-            name: processName,
-            script: 'dist/workers/instance-worker.js', // Will be created later
-            args: `--profile-id ${profileId}`,
-            cwd: process.cwd(),
-            instances: 1,
-            autorestart: true,
-            max_memory_restart: '300M',
-            env: {
-              PROFILE_ID: profileId.toString(),
-              INSTANCE_NAME: instanceName,
-              ADB_PORT: port.toString(),
-            },
-            error_file: path.join(this.LOGS_PATH, `instance-${profileId}-error.log`),
-            out_file: path.join(this.LOGS_PATH, `instance-${profileId}-out.log`),
-            log_date_format: 'YYYY-MM-DD HH:mm:ss',
-            merge_logs: true,
-            min_uptime: 5000, // milliseconds instead of '5s'
-            max_restarts: 5,
-            restart_delay: 3000,
-          } as any, // Type assertion to work around PM2 types
-          (err) => {
-            this.disconnect();
+      // Check if worker script exists
+      const workerScript = path.join(process.cwd(), 'dist', 'workers', 'instance-worker.js');
+      const fs = await import('fs');
+      if (!fs.existsSync(workerScript)) {
+        return {
+          success: false,
+          message: 'Worker script not found. Please build the project first.'
+        };
+      }
 
-            if (err) {
-              logger.error(`[PM2Service] Failed to start instance ${profileId}:`, err);
-              resolve({
-                success: false,
-                message: `Failed to start PM2 process: ${err.message}`
-              });
-            } else {
-              logger.info(`[PM2Service] Started PM2 process for instance ${profileId}`);
-              resolve({
-                success: true,
-                message: `Instance ${profileId} started and managed by PM2`
-              });
-            }
-          }
-        );
-      });
+      // Start using PM2 CLI
+      const logPath = path.join(this.LOGS_PATH, `instance-${profileId}`);
+
+      // Create logs directory if it doesn't exist
+      if (!fs.existsSync(path.dirname(logPath))) {
+        fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      }
+
+      // Use PM2's env flag to ensure environment variables are persisted
+      execSync(
+        `pm2 start "${workerScript}" --name "${processName}" ` +
+        `--output "${logPath}-out.log" ` +
+        `--error "${logPath}-error.log" ` +
+        `--merge-logs ` +
+        `--max-memory-restart 300M ` +
+        `--update-env ` +
+        `-e PROFILE_ID=${profileId} ` +
+        `-e INSTANCE_NAME=${instanceName} ` +
+        `-e ADB_PORT=${port}`,
+        {
+          encoding: 'utf-8',
+        }
+      );
+
+      logger.info(`[PM2Service] Started PM2 process for instance ${profileId}`);
+      return {
+        success: true,
+        message: `Instance ${profileId} started and managed by PM2`
+      };
     } catch (error: any) {
-      this.disconnect();
       logger.error(`[PM2Service] Error starting instance ${profileId}:`, error);
       return {
         success: false,
@@ -268,47 +173,28 @@ export class PM2Service {
    */
   static async stopInstance(profileId: number): Promise<{ success: boolean; message: string }> {
     try {
-      const connected = await this.connect();
-      if (!connected) {
+      const { execSync } = await import('child_process');
+      const processName = `instance-${profileId}`;
+
+      // Check if process exists
+      const status = await this.getInstanceStatus(profileId);
+      if (!status) {
         return {
-          success: false,
-          message: 'PM2 daemon not available'
+          success: true,
+          message: `Instance ${profileId} is not running`
         };
       }
 
-      const processName = `instance-${profileId}`;
+      // Stop and delete using PM2 CLI
+      execSync(`pm2 delete "${processName}"`, { encoding: 'utf-8' });
 
-      return new Promise((resolve) => {
-        pm2.stop(processName, (err) => {
-          if (err) {
-            this.disconnect();
-            resolve({
-              success: false,
-              message: `Failed to stop: ${err.message}`
-            });
-            return;
-          }
-
-          // Delete after stopping
-          pm2.delete(processName, (err) => {
-            this.disconnect();
-
-            if (err) {
-              resolve({
-                success: true, // Still consider success even if delete fails
-                message: `Stopped but failed to delete: ${err.message}`
-              });
-            } else {
-              resolve({
-                success: true,
-                message: `Instance ${profileId} stopped`
-              });
-            }
-          });
-        });
-      });
+      logger.info(`[PM2Service] Stopped PM2 process for instance ${profileId}`);
+      return {
+        success: true,
+        message: `Instance ${profileId} stopped`
+      };
     } catch (error: any) {
-      this.disconnect();
+      logger.error(`[PM2Service] Error stopping instance ${profileId}:`, error);
       return {
         success: false,
         message: error.message || 'Unknown error'
@@ -321,35 +207,28 @@ export class PM2Service {
    */
   static async restartInstance(profileId: number): Promise<{ success: boolean; message: string }> {
     try {
-      const connected = await this.connect();
-      if (!connected) {
+      const { execSync } = await import('child_process');
+      const processName = `instance-${profileId}`;
+
+      // Check if process exists
+      const status = await this.getInstanceStatus(profileId);
+      if (!status) {
         return {
           success: false,
-          message: 'PM2 daemon not available'
+          message: `Instance ${profileId} is not running`
         };
       }
 
-      const processName = `instance-${profileId}`;
+      // Restart using PM2 CLI
+      execSync(`pm2 restart "${processName}"`, { encoding: 'utf-8' });
 
-      return new Promise((resolve) => {
-        pm2.restart(processName, (err) => {
-          this.disconnect();
-
-          if (err) {
-            resolve({
-              success: false,
-              message: `Failed to restart: ${err.message}`
-            });
-          } else {
-            resolve({
-              success: true,
-              message: `Instance ${profileId} restarted`
-            });
-          }
-        });
-      });
+      logger.info(`[PM2Service] Restarted PM2 process for instance ${profileId}`);
+      return {
+        success: true,
+        message: `Instance ${profileId} restarted`
+      };
     } catch (error: any) {
-      this.disconnect();
+      logger.error(`[PM2Service] Error restarting instance ${profileId}:`, error);
       return {
         success: false,
         message: error.message || 'Unknown error'
@@ -417,6 +296,98 @@ export class PM2Service {
         totalCpu: 0,
       };
     }
+  }
+
+  /**
+   * Spawn PM2 workers for all profiles
+   * This creates a dedicated PM2 process for each profile to handle script execution
+   */
+  static async spawnAllWorkers(profiles: Array<{
+    id: number;
+    instanceName: string;
+    port: number;
+  }>): Promise<{
+    success: boolean;
+    spawned: number;
+    failed: number;
+    skipped: number;
+    results: Array<{
+      profileId: number;
+      status: 'spawned' | 'failed' | 'skipped';
+      message: string;
+    }>;
+  }> {
+    logger.info(`[PM2Service] Starting to spawn workers for ${profiles.length} profiles...`);
+
+    let spawned = 0;
+    let failed = 0;
+    let skipped = 0;
+    const results: Array<{
+      profileId: number;
+      status: 'spawned' | 'failed' | 'skipped';
+      message: string;
+    }> = [];
+
+    for (const profile of profiles) {
+      try {
+        // Check if worker already running
+        const existingStatus = await this.getInstanceStatus(profile.id);
+        if (existingStatus && existingStatus.status === 'online') {
+          logger.info(`[PM2Service] Worker for profile ${profile.id} already running, skipping...`);
+          skipped++;
+          results.push({
+            profileId: profile.id,
+            status: 'skipped',
+            message: 'Worker already running'
+          });
+          continue;
+        }
+
+        // Spawn new worker
+        const result = await this.startInstance(
+          profile.id,
+          profile.instanceName,
+          profile.port
+        );
+
+        if (result.success) {
+          spawned++;
+          results.push({
+            profileId: profile.id,
+            status: 'spawned',
+            message: result.message
+          });
+          logger.info(`[PM2Service] Successfully spawned worker for profile ${profile.id}`);
+        } else {
+          failed++;
+          results.push({
+            profileId: profile.id,
+            status: 'failed',
+            message: result.message
+          });
+          logger.error(`[PM2Service] Failed to spawn worker for profile ${profile.id}: ${result.message}`);
+        }
+      } catch (error: any) {
+        failed++;
+        results.push({
+          profileId: profile.id,
+          status: 'failed',
+          message: error.message || 'Unknown error'
+        });
+        logger.error(`[PM2Service] Error spawning worker for profile ${profile.id}:`, error);
+      }
+    }
+
+    const summary = {
+      success: failed === 0,
+      spawned,
+      failed,
+      skipped,
+      results
+    };
+
+    logger.info(`[PM2Service] Spawn workers completed: ${spawned} spawned, ${failed} failed, ${skipped} skipped`);
+    return summary;
   }
 }
 

@@ -357,14 +357,15 @@ export class ProfileManager {
 
       // Auto-execute assigned scripts OR launch Google app
       const autoRunScripts = profile.metadata?.autoRunScripts || [];
-      if (autoRunScripts.length > 0) {
-        // Execute auto-run scripts
-        logger.info(`Auto-executing ${autoRunScripts.length} script(s) for ${profile.name}`);
-        await this.executeAutoRunScripts(profileId, autoRunScripts);
-      } else {
-        // No scripts assigned, just launch Google app
-        await this.autoLaunchApp(profileId);
-      }
+      // DISABLED: Auto-run scripts feature temporarily disabled due to compatibility issues
+      // if (autoRunScripts.length > 0) {
+      //   // Execute auto-run scripts
+      //   logger.info(`Auto-executing ${autoRunScripts.length} script(s) for ${profile.name}`);
+      //   await this.executeAutoRunScripts(profileId, autoRunScripts);
+      // } else {
+      //   // No scripts assigned, just launch Google app
+      //   await this.autoLaunchApp(profileId);
+      // }
 
       logger.info(`Activated profile: ${profile.name}`);
     } catch (error) {

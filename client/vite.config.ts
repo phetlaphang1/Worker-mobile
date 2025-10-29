@@ -33,14 +33,36 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5051',
         changeOrigin: true,
-        // Add retry logic for when server is restarting
+        timeout: 30000, // 30 second timeout
         configure: (proxy, options) => {
+          let errorCount = 0;
+          let lastErrorTime = 0;
+          const ERROR_THROTTLE = 5000; // Only log every 5 seconds
+
           proxy.on('error', (err, req, res) => {
-            console.log('[PROXY] Connection error - Server may be restarting, will retry...');
-            // Don't log full error stack, just show friendly message
+            const now = Date.now();
+            // Throttle error messages to avoid spam
+            if (now - lastErrorTime > ERROR_THROTTLE) {
+              console.log('[PROXY] Connection error - Server may be restarting, will retry...');
+              lastErrorTime = now;
+              errorCount = 0;
+            } else {
+              errorCount++;
+            }
+
+            // Send a proper error response instead of hanging
+            if (res && !res.headersSent) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: 'Backend server unavailable',
+                message: 'Server is restarting or temporarily unavailable. Please try again.'
+              }));
+            }
           });
+
           proxy.on('proxyReq', (proxyReq, req, res) => {
-            // Suppress verbose logs
+            // Set reasonable timeout for proxy requests
+            proxyReq.setTimeout(30000);
           });
         },
       },
@@ -49,8 +71,17 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
         configure: (proxy, options) => {
+          let wsErrorCount = 0;
+          let lastWsErrorTime = 0;
+          const WS_ERROR_THROTTLE = 5000;
+
           proxy.on('error', (err, req, res) => {
-            console.log('[WS PROXY] Connection error - Server may be restarting...');
+            const now = Date.now();
+            if (now - lastWsErrorTime > WS_ERROR_THROTTLE) {
+              console.log('[WS PROXY] WebSocket connection error - Server may be restarting...');
+              lastWsErrorTime = now;
+              wsErrorCount = 0;
+            }
           });
         },
       },

@@ -1,0 +1,168 @@
+{
+  "id": 18,
+  "name": "worker_18",
+  "instanceName": "worker_19_19",
+  "port": 5649,
+  "settings": {
+    "resolution": "1080,2400",
+    "cpu": 2,
+    "memory": 2048
+  },
+  "device": {
+    "imei": "121751124715469",
+    "androidId": "59b100eba7221101",
+    "model": "OnePlus 9",
+    "manufacturer": "OnePlus",
+    "brand": "OnePlus",
+    "resolution": "1080x2400",
+    "dpi": 420
+  },
+  "network": {
+    "useProxy": false
+  },
+  "apps": {
+    "twitter": {
+      "installed": true,
+      "packageName": "com.twitter.android"
+    }
+  },
+  "status": "active",
+  "createdAt": "2025-10-27T03:35:45.742Z",
+  "metadata": {
+    "accounts": {
+      "x": {
+        "username": "JenkinsFlo5977",
+        "password": "Lamgiau00kh0@37"
+      }
+    },
+    "executionHistory": [
+      {
+        "taskId": "direct_script_1761713561410_2j3nbks8p",
+        "status": "completed",
+        "timestamp": "2025-10-29T04:52:47.477Z",
+        "startedAt": "2025-10-29T04:52:41.410Z",
+        "completedAt": "2025-10-29T04:52:47.477Z",
+        "duration": 6067,
+        "logs": [
+          "[04:52:41] Starting script execution for profile: worker_18 (ID: 18)",
+          "[04:52:41] Instance: worker_19_19, Status: active",
+          "[04:52:41] Resolving ADB port for instance worker_19_19 from ldconsole...",
+          "[04:52:41] Resolved ADB port: 5649 (stored port was: 5648)",
+          "[04:52:41] Port changed from 5648 to 5649, updating profile...",
+          "[04:52:41] Connecting ADB to 127.0.0.1:5649 using D:\\LDPlayer\\LDPlayer9\\adb.exe...",
+          "[04:52:41] ADB connected successfully to port 5649",
+          "[04:52:41] Resolving ADB serial for port 5649...",
+          "[04:52:41] Device serial: 127.0.0.1:5649",
+          "[04:52:41] Waiting for device to be fully ready...",
+          "[04:52:41] Device is ready for commands!",
+          "[04:52:41] Preparing to execute user script...",
+          "[04:52:41] Script length: 132 characters",
+          "[04:52:41] Full script code:\n------------------------------------------------------------",
+          "[04:52:41] log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');",
+          "[04:52:41] ------------------------------------------------------------",
+          "[04:52:41] Script length: 132 characters",
+          "[04:52:41] Hex dump (first 50 chars): l[108] o[111] g[103] ([40] '[39] 🚀[55357]  [32] Đ[272] a[97] n[110] g[103]  [32] m[109] ở[7903]  [32] a[97] p[112] p[112]  [32] X[88] .[46] .[46] .[46] '[39] )[41] ;[59] \n[10] a[97] w[119] a[97] i[105] t[116]  [32] h[104] e[101] l[108] p[112] e[101] r[114] s[115] .[46] l[108] a[97] u[117] n[110] c[99] h[104] A[65] p[112]",
+          "[04:52:41] Sanitized script (length: 132)",
+          "[04:52:41] Character codes: 0:108,1:111,2:103,3:40,4:39,5:55357,6:32,7:272,8:97,9:110,10:103,11:32,12:109,13:7903,14:32,15:97,16:112,17:112,18:32,19:88,20:46,21:46,22:46,23:39,24:41,25:59,26:10,27:97,28:119,29:97,30:105,31:116,32:32,33:104,34:101,35:108,36:112,37:101,38:114,39:115,40:46,41:108,42:97,43:117,44:110,45:99,46:104,47:65,48:112,49:112,50:40,51:39,52:99,53:111,54:109,55:46,56:116,57:119,58:105,59:116,60:116,61:101,62:114,63:46,64:97,65:110,66:100,67:114,68:111,69:105,70:100,71:39,72:41,73:59,74:32,75:32,76:10,77:97,78:119,79:97,80:105,81:116,82:32,83:104,84:101,85:108,86:112,87:101,88:114,89:115,90:46,91:115,92:108,93:101,94:101,95:112,96:40,97:53,98:48,99:48,100:48,101:41,102:59,103:10,104:108,105:111,106:103,107:40,108:39,109:9989,110:32,111:65,112:112,113:112,114:32,115:88,116:32,117:273,118:227,119:32,120:109,121:7903,122:32,123:120,124:111,125:110,126:103,127:33,128:39,129:41,130:59",
+          "[04:52:41] Validating script syntax...",
+          "[04:52:41] Script syntax is valid",
+          "[04:52:41] Executing user script now...",
+          "[04:52:41] 🚀 Đang mở app X...",
+          "[04:52:41] Launching app: com.twitter.android",
+          "[04:52:42] App launched successfully",
+          "[04:52:42] Launch output:   bash arg: -p\r\n  bash arg: com.twitter.android\r\n  bash arg: -c\r\n  bash arg: android.intent.category",
+          "[04:52:42] Sleeping for 5000ms...",
+          "[04:52:47] Sleep completed",
+          "[04:52:47] ✅ App X đã mở xong!",
+          "[04:52:47] Script execution completed successfully in 5678ms",
+          "Script completed at 2025-10-29T04:52:47.477Z"
+        ],
+        "fullLog": "[OK] Script Execution - 29/10/2025, 11:52:47\n============================================================\n[04:52:41] Starting script execution for profile: worker_18 (ID: 18)\n[04:52:41] Instance: worker_19_19, Status: active\n[04:52:41] Resolving ADB port for instance worker_19_19 from ldconsole...\n[04:52:41] Resolved ADB port: 5649 (stored port was: 5648)\n[04:52:41] Port changed from 5648 to 5649, updating profile...\n[04:52:41] Connecting ADB to 127.0.0.1:5649 using D:\\LDPlayer\\LDPlayer9\\adb.exe...\n[04:52:41] ADB connected successfully to port 5649\n[04:52:41] Resolving ADB serial for port 5649...\n[04:52:41] Device serial: 127.0.0.1:5649\n[04:52:41] Waiting for device to be fully ready...\n[04:52:41] Device is ready for commands!\n[04:52:41] Preparing to execute user script...\n[04:52:41] Script length: 132 characters\n[04:52:41] Full script code:\n------------------------------------------------------------\n[04:52:41] log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');\n[04:52:41] ------------------------------------------------------------\n[04:52:41] Script length: 132 characters\n[04:52:41] Hex dump (first 50 chars): l[108] o[111] g[103] ([40] '[39] 🚀[55357]  [32] Đ[272] a[97] n[110] g[103]  [32] m[109] ở[7903]  [32] a[97] p[112] p[112]  [32] X[88] .[46] .[46] .[46] '[39] )[41] ;[59] \n[10] a[97] w[119] a[97] i[105] t[116]  [32] h[104] e[101] l[108] p[112] e[101] r[114] s[115] .[46] l[108] a[97] u[117] n[110] c[99] h[104] A[65] p[112]\n[04:52:41] Sanitized script (length: 132)\n[04:52:41] Character codes: 0:108,1:111,2:103,3:40,4:39,5:55357,6:32,7:272,8:97,9:110,10:103,11:32,12:109,13:7903,14:32,15:97,16:112,17:112,18:32,19:88,20:46,21:46,22:46,23:39,24:41,25:59,26:10,27:97,28:119,29:97,30:105,31:116,32:32,33:104,34:101,35:108,36:112,37:101,38:114,39:115,40:46,41:108,42:97,43:117,44:110,45:99,46:104,47:65,48:112,49:112,50:40,51:39,52:99,53:111,54:109,55:46,56:116,57:119,58:105,59:116,60:116,61:101,62:114,63:46,64:97,65:110,66:100,67:114,68:111,69:105,70:100,71:39,72:41,73:59,74:32,75:32,76:10,77:97,78:119,79:97,80:105,81:116,82:32,83:104,84:101,85:108,86:112,87:101,88:114,89:115,90:46,91:115,92:108,93:101,94:101,95:112,96:40,97:53,98:48,99:48,100:48,101:41,102:59,103:10,104:108,105:111,106:103,107:40,108:39,109:9989,110:32,111:65,112:112,113:112,114:32,115:88,116:32,117:273,118:227,119:32,120:109,121:7903,122:32,123:120,124:111,125:110,126:103,127:33,128:39,129:41,130:59\n[04:52:41] Validating script syntax...\n[04:52:41] Script syntax is valid\n[04:52:41] Executing user script now...\n[04:52:41] 🚀 Đang mở app X...\n[04:52:41] Launching app: com.twitter.android\n[04:52:42] App launched successfully\n[04:52:42] Launch output:   bash arg: -p\r\n  bash arg: com.twitter.android\r\n  bash arg: -c\r\n  bash arg: android.intent.category\n[04:52:42] Sleeping for 5000ms...\n[04:52:47] Sleep completed\n[04:52:47] ✅ App X đã mở xong!\n[04:52:47] Script execution completed successfully in 5678ms\nScript completed at 2025-10-29T04:52:47.477Z\n============================================================\nStatus: COMPLETED\n"
+      },
+      {
+        "taskId": "direct_script_1761705659784_187n6yxat",
+        "status": "completed",
+        "timestamp": "2025-10-29T02:41:05.594Z",
+        "startedAt": "2025-10-29T02:40:59.784Z",
+        "completedAt": "2025-10-29T02:41:05.594Z",
+        "duration": 5810,
+        "logs": [
+          "[02:40:59] Starting script execution for profile: worker_18 (ID: 18)",
+          "[02:40:59] Instance: worker_18_18, Status: active",
+          "[02:40:59] Resolving ADB port for instance worker_18_18 from ldconsole...",
+          "[02:40:59] Resolved ADB port: 5645 (stored port was: 5645)",
+          "[02:40:59] Connecting ADB to 127.0.0.1:5645 using D:\\LDPlayer\\LDPlayer9\\adb.exe...",
+          "[02:40:59] ADB connected successfully to port 5645",
+          "[02:40:59] Resolving ADB serial for port 5645...",
+          "[02:40:59] Device serial: 127.0.0.1:5645",
+          "[02:40:59] Waiting for device to be fully ready...",
+          "[02:41:00] Device is ready for commands!",
+          "[02:41:00] Preparing to execute user script...",
+          "[02:41:00] Script length: 132 characters",
+          "[02:41:00] Full script code:\n------------------------------------------------------------",
+          "[02:41:00] log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');",
+          "[02:41:00] ------------------------------------------------------------",
+          "[02:41:00] Script length: 132 characters",
+          "[02:41:00] Hex dump (first 50 chars): l[108] o[111] g[103] ([40] '[39] 🚀[55357]  [32] Đ[272] a[97] n[110] g[103]  [32] m[109] ở[7903]  [32] a[97] p[112] p[112]  [32] X[88] .[46] .[46] .[46] '[39] )[41] ;[59] \n[10] a[97] w[119] a[97] i[105] t[116]  [32] h[104] e[101] l[108] p[112] e[101] r[114] s[115] .[46] l[108] a[97] u[117] n[110] c[99] h[104] A[65] p[112]",
+          "[02:41:00] Sanitized script (length: 132)",
+          "[02:41:00] Character codes: 0:108,1:111,2:103,3:40,4:39,5:55357,6:32,7:272,8:97,9:110,10:103,11:32,12:109,13:7903,14:32,15:97,16:112,17:112,18:32,19:88,20:46,21:46,22:46,23:39,24:41,25:59,26:10,27:97,28:119,29:97,30:105,31:116,32:32,33:104,34:101,35:108,36:112,37:101,38:114,39:115,40:46,41:108,42:97,43:117,44:110,45:99,46:104,47:65,48:112,49:112,50:40,51:39,52:99,53:111,54:109,55:46,56:116,57:119,58:105,59:116,60:116,61:101,62:114,63:46,64:97,65:110,66:100,67:114,68:111,69:105,70:100,71:39,72:41,73:59,74:32,75:32,76:10,77:97,78:119,79:97,80:105,81:116,82:32,83:104,84:101,85:108,86:112,87:101,88:114,89:115,90:46,91:115,92:108,93:101,94:101,95:112,96:40,97:53,98:48,99:48,100:48,101:41,102:59,103:10,104:108,105:111,106:103,107:40,108:39,109:9989,110:32,111:65,112:112,113:112,114:32,115:88,116:32,117:273,118:227,119:32,120:109,121:7903,122:32,123:120,124:111,125:110,126:103,127:33,128:39,129:41,130:59",
+          "[02:41:00] Validating script syntax...",
+          "[02:41:00] Script syntax is valid",
+          "[02:41:00] Executing user script now...",
+          "[02:41:00] 🚀 Đang mở app X...",
+          "[02:41:00] Launching app: com.twitter.android",
+          "[02:41:00] App launched successfully",
+          "[02:41:00] Launch output:   bash arg: -p\r\n  bash arg: com.twitter.android\r\n  bash arg: -c\r\n  bash arg: android.intent.category",
+          "[02:41:00] Sleeping for 5000ms...",
+          "[02:41:05] Sleep completed",
+          "[02:41:05] ✅ App X đã mở xong!",
+          "[02:41:05] Script execution completed successfully in 5572ms",
+          "Script completed at 2025-10-29T02:41:05.594Z"
+        ],
+        "fullLog": "[OK] Script Execution - 29/10/2025, 09:41:05\n============================================================\n[02:40:59] Starting script execution for profile: worker_18 (ID: 18)\n[02:40:59] Instance: worker_18_18, Status: active\n[02:40:59] Resolving ADB port for instance worker_18_18 from ldconsole...\n[02:40:59] Resolved ADB port: 5645 (stored port was: 5645)\n[02:40:59] Connecting ADB to 127.0.0.1:5645 using D:\\LDPlayer\\LDPlayer9\\adb.exe...\n[02:40:59] ADB connected successfully to port 5645\n[02:40:59] Resolving ADB serial for port 5645...\n[02:40:59] Device serial: 127.0.0.1:5645\n[02:40:59] Waiting for device to be fully ready...\n[02:41:00] Device is ready for commands!\n[02:41:00] Preparing to execute user script...\n[02:41:00] Script length: 132 characters\n[02:41:00] Full script code:\n------------------------------------------------------------\n[02:41:00] log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');\n[02:41:00] ------------------------------------------------------------\n[02:41:00] Script length: 132 characters\n[02:41:00] Hex dump (first 50 chars): l[108] o[111] g[103] ([40] '[39] 🚀[55357]  [32] Đ[272] a[97] n[110] g[103]  [32] m[109] ở[7903]  [32] a[97] p[112] p[112]  [32] X[88] .[46] .[46] .[46] '[39] )[41] ;[59] \n[10] a[97] w[119] a[97] i[105] t[116]  [32] h[104] e[101] l[108] p[112] e[101] r[114] s[115] .[46] l[108] a[97] u[117] n[110] c[99] h[104] A[65] p[112]\n[02:41:00] Sanitized script (length: 132)\n[02:41:00] Character codes: 0:108,1:111,2:103,3:40,4:39,5:55357,6:32,7:272,8:97,9:110,10:103,11:32,12:109,13:7903,14:32,15:97,16:112,17:112,18:32,19:88,20:46,21:46,22:46,23:39,24:41,25:59,26:10,27:97,28:119,29:97,30:105,31:116,32:32,33:104,34:101,35:108,36:112,37:101,38:114,39:115,40:46,41:108,42:97,43:117,44:110,45:99,46:104,47:65,48:112,49:112,50:40,51:39,52:99,53:111,54:109,55:46,56:116,57:119,58:105,59:116,60:116,61:101,62:114,63:46,64:97,65:110,66:100,67:114,68:111,69:105,70:100,71:39,72:41,73:59,74:32,75:32,76:10,77:97,78:119,79:97,80:105,81:116,82:32,83:104,84:101,85:108,86:112,87:101,88:114,89:115,90:46,91:115,92:108,93:101,94:101,95:112,96:40,97:53,98:48,99:48,100:48,101:41,102:59,103:10,104:108,105:111,106:103,107:40,108:39,109:9989,110:32,111:65,112:112,113:112,114:32,115:88,116:32,117:273,118:227,119:32,120:109,121:7903,122:32,123:120,124:111,125:110,126:103,127:33,128:39,129:41,130:59\n[02:41:00] Validating script syntax...\n[02:41:00] Script syntax is valid\n[02:41:00] Executing user script now...\n[02:41:00] 🚀 Đang mở app X...\n[02:41:00] Launching app: com.twitter.android\n[02:41:00] App launched successfully\n[02:41:00] Launch output:   bash arg: -p\r\n  bash arg: com.twitter.android\r\n  bash arg: -c\r\n  bash arg: android.intent.category\n[02:41:00] Sleeping for 5000ms...\n[02:41:05] Sleep completed\n[02:41:05] ✅ App X đã mở xong!\n[02:41:05] Script execution completed successfully in 5572ms\nScript completed at 2025-10-29T02:41:05.594Z\n============================================================\nStatus: COMPLETED\n"
+      }
+    ],
+    "scriptContent": "log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');",
+    "lastLog": "[OK] Script Execution - 29/10/2025, 11:52:47\n============================================================\n[04:52:41] Starting script execution for profile: worker_18 (ID: 18)\n[04:52:41] Instance: worker_19_19, Status: active\n[04:52:41] Resolving ADB port for instance worker_19_19 from ldconsole...\n[04:52:41] Resolved ADB port: 5649 (stored port was: 5648)\n[04:52:41] Port changed from 5648 to 5649, updating profile...\n[04:52:41] Connecting ADB to 127.0.0.1:5649 using D:\\LDPlayer\\LDPlayer9\\adb.exe...\n[04:52:41] ADB connected successfully to port 5649\n[04:52:41] Resolving ADB serial for port 5649...\n[04:52:41] Device serial: 127.0.0.1:5649\n[04:52:41] Waiting for device to be fully ready...\n[04:52:41] Device is ready for commands!\n[04:52:41] Preparing to execute user script...\n[04:52:41] Script length: 132 characters\n[04:52:41] Full script code:\n------------------------------------------------------------\n[04:52:41] log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');\n[04:52:41] ------------------------------------------------------------\n[04:52:41] Script length: 132 characters\n[04:52:41] Hex dump (first 50 chars): l[108] o[111] g[103] ([40] '[39] 🚀[55357]  [32] Đ[272] a[97] n[110] g[103]  [32] m[109] ở[7903]  [32] a[97] p[112] p[112]  [32] X[88] .[46] .[46] .[46] '[39] )[41] ;[59] \n[10] a[97] w[119] a[97] i[105] t[116]  [32] h[104] e[101] l[108] p[112] e[101] r[114] s[115] .[46] l[108] a[97] u[117] n[110] c[99] h[104] A[65] p[112]\n[04:52:41] Sanitized script (length: 132)\n[04:52:41] Character codes: 0:108,1:111,2:103,3:40,4:39,5:55357,6:32,7:272,8:97,9:110,10:103,11:32,12:109,13:7903,14:32,15:97,16:112,17:112,18:32,19:88,20:46,21:46,22:46,23:39,24:41,25:59,26:10,27:97,28:119,29:97,30:105,31:116,32:32,33:104,34:101,35:108,36:112,37:101,38:114,39:115,40:46,41:108,42:97,43:117,44:110,45:99,46:104,47:65,48:112,49:112,50:40,51:39,52:99,53:111,54:109,55:46,56:116,57:119,58:105,59:116,60:116,61:101,62:114,63:46,64:97,65:110,66:100,67:114,68:111,69:105,70:100,71:39,72:41,73:59,74:32,75:32,76:10,77:97,78:119,79:97,80:105,81:116,82:32,83:104,84:101,85:108,86:112,87:101,88:114,89:115,90:46,91:115,92:108,93:101,94:101,95:112,96:40,97:53,98:48,99:48,100:48,101:41,102:59,103:10,104:108,105:111,106:103,107:40,108:39,109:9989,110:32,111:65,112:112,113:112,114:32,115:88,116:32,117:273,118:227,119:32,120:109,121:7903,122:32,123:120,124:111,125:110,126:103,127:33,128:39,129:41,130:59\n[04:52:41] Validating script syntax...\n[04:52:41] Script syntax is valid\n[04:52:41] Executing user script now...\n[04:52:41] 🚀 Đang mở app X...\n[04:52:41] Launching app: com.twitter.android\n[04:52:42] App launched successfully\n[04:52:42] Launch output:   bash arg: -p\r\n  bash arg: com.twitter.android\r\n  bash arg: -c\r\n  bash arg: android.intent.category\n[04:52:42] Sleeping for 5000ms...\n[04:52:47] Sleep completed\n[04:52:47] ✅ App X đã mở xong!\n[04:52:47] Script execution completed successfully in 5678ms\nScript completed at 2025-10-29T04:52:47.477Z\n============================================================\nStatus: COMPLETED\n",
+    "lastExecution": {
+      "taskId": "direct_script_1761713561410_2j3nbks8p",
+      "status": "completed",
+      "timestamp": "2025-10-29T04:52:47.477Z",
+      "logs": [
+        "[04:52:41] Starting script execution for profile: worker_18 (ID: 18)",
+        "[04:52:41] Instance: worker_19_19, Status: active",
+        "[04:52:41] Resolving ADB port for instance worker_19_19 from ldconsole...",
+        "[04:52:41] Resolved ADB port: 5649 (stored port was: 5648)",
+        "[04:52:41] Port changed from 5648 to 5649, updating profile...",
+        "[04:52:41] Connecting ADB to 127.0.0.1:5649 using D:\\LDPlayer\\LDPlayer9\\adb.exe...",
+        "[04:52:41] ADB connected successfully to port 5649",
+        "[04:52:41] Resolving ADB serial for port 5649...",
+        "[04:52:41] Device serial: 127.0.0.1:5649",
+        "[04:52:41] Waiting for device to be fully ready...",
+        "[04:52:41] Device is ready for commands!",
+        "[04:52:41] Preparing to execute user script...",
+        "[04:52:41] Script length: 132 characters",
+        "[04:52:41] Full script code:\n------------------------------------------------------------",
+        "[04:52:41] log('🚀 Đang mở app X...');\nawait helpers.launchApp('com.twitter.android');  \nawait helpers.sleep(5000);\nlog('✅ App X đã mở xong!');",
+        "[04:52:41] ------------------------------------------------------------",
+        "[04:52:41] Script length: 132 characters",
+        "[04:52:41] Hex dump (first 50 chars): l[108] o[111] g[103] ([40] '[39] 🚀[55357]  [32] Đ[272] a[97] n[110] g[103]  [32] m[109] ở[7903]  [32] a[97] p[112] p[112]  [32] X[88] .[46] .[46] .[46] '[39] )[41] ;[59] \n[10] a[97] w[119] a[97] i[105] t[116]  [32] h[104] e[101] l[108] p[112] e[101] r[114] s[115] .[46] l[108] a[97] u[117] n[110] c[99] h[104] A[65] p[112]",
+        "[04:52:41] Sanitized script (length: 132)",
+        "[04:52:41] Character codes: 0:108,1:111,2:103,3:40,4:39,5:55357,6:32,7:272,8:97,9:110,10:103,11:32,12:109,13:7903,14:32,15:97,16:112,17:112,18:32,19:88,20:46,21:46,22:46,23:39,24:41,25:59,26:10,27:97,28:119,29:97,30:105,31:116,32:32,33:104,34:101,35:108,36:112,37:101,38:114,39:115,40:46,41:108,42:97,43:117,44:110,45:99,46:104,47:65,48:112,49:112,50:40,51:39,52:99,53:111,54:109,55:46,56:116,57:119,58:105,59:116,60:116,61:101,62:114,63:46,64:97,65:110,66:100,67:114,68:111,69:105,70:100,71:39,72:41,73:59,74:32,75:32,76:10,77:97,78:119,79:97,80:105,81:116,82:32,83:104,84:101,85:108,86:112,87:101,88:114,89:115,90:46,91:115,92:108,93:101,94:101,95:112,96:40,97:53,98:48,99:48,100:48,101:41,102:59,103:10,104:108,105:111,106:103,107:40,108:39,109:9989,110:32,111:65,112:112,113:112,114:32,115:88,116:32,117:273,118:227,119:32,120:109,121:7903,122:32,123:120,124:111,125:110,126:103,127:33,128:39,129:41,130:59",
+        "[04:52:41] Validating script syntax...",
+        "[04:52:41] Script syntax is valid",
+        "[04:52:41] Executing user script now...",
+        "[04:52:41] 🚀 Đang mở app X...",
+        "[04:52:41] Launching app: com.twitter.android",
+        "[04:52:42] App launched successfully",
+        "[04:52:42] Launch output:   bash arg: -p\r\n  bash arg: com.twitter.android\r\n  bash arg: -c\r\n  bash arg: android.intent.category",
+        "[04:52:42] Sleeping for 5000ms...",
+        "[04:52:47] Sleep completed",
+        "[04:52:47] ✅ App X đã mở xong!",
+        "[04:52:47] Script execution completed successfully in 5678ms",
+        "Script completed at 2025-10-29T04:52:47.477Z"
+      ]
+    }
+  },
+  "lastUsed": "2025-10-29T04:52:41.385Z"
+}

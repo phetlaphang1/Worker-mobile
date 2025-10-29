@@ -890,9 +890,25 @@ export function setupRoutes(app: Express, services: RouteServices) {
       const isRunning = await profileManager.isInstanceRunning(profile.instanceName);
 
       if (!isRunning) {
-        // Only launch instance if it's NOT already running
+        // Only launch instance if it's NOT already running with TIMEOUT
         logger.info(`[LAUNCH] Launching instance for profile ${profile.name} (currently stopped)`);
-        await profileManager.activateProfile(profileId);
+
+        // Add timeout wrapper - 180 second max for activation (increased from 60s)
+        const activationPromise = profileManager.activateProfile(profileId);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Profile activation timeout (180s)')), 180000)
+        );
+
+        try {
+          await Promise.race([activationPromise, timeoutPromise]);
+          logger.info(`[LAUNCH] Profile ${profile.name} activated successfully`);
+        } catch (error: any) {
+          logger.error(`[LAUNCH] Activation timeout or error:`, error);
+          return res.status(500).json({
+            error: 'Failed to activate profile',
+            message: error.message || 'Activation timeout'
+          });
+        }
 
         // Get fresh profile after activation
         profile = profileManager.getProfile(profileId)!;
@@ -3151,48 +3167,58 @@ export function setupRoutes(app: Express, services: RouteServices) {
   // ========================================
 
   /**
-   * Get PM2 status for a specific instance
+   * Get worker status for a specific instance
    */
   app.get('/api/pm2/instance/:profileId/status', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
       const profileId = parseInt(req.params.profileId);
-      const status = await PM2Service.getInstanceStatus(profileId);
+      const status = InstanceWorkerService.getWorkerStatus(profileId);
+
+      // Disable caching to prevent 304 responses
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
 
       res.json({
         success: true,
         status
       });
     } catch (error) {
-      logger.error('Error getting PM2 instance status:', error);
-      res.status(500).json({ error: 'Failed to get PM2 status' });
+      logger.error('Error getting instance worker status:', error);
+      res.status(500).json({ error: 'Failed to get worker status' });
     }
   });
 
   /**
-   * Get PM2 status for all instances
+   * Get worker status for all instances
    */
   app.get('/api/pm2/instances/status', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
-      const instances = await PM2Service.getAllInstancesStatus();
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
+      const instances = InstanceWorkerService.getAllWorkersStatus();
+
+      // Disable caching to prevent 304 responses
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
 
       res.json({
         success: true,
         instances
       });
     } catch (error) {
-      logger.error('Error getting all PM2 instances status:', error);
-      res.status(500).json({ error: 'Failed to get PM2 statuses' });
+      logger.error('Error getting all instance workers status:', error);
+      res.status(500).json({ error: 'Failed to get worker statuses' });
     }
   });
 
   /**
-   * Start PM2 process for an instance
+   * Start worker for an instance
    */
   app.post('/api/pm2/instance/:profileId/start', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
       const profileId = parseInt(req.params.profileId);
 
       // Get profile info
@@ -3201,77 +3227,139 @@ export function setupRoutes(app: Express, services: RouteServices) {
         return res.status(404).json({ error: 'Profile not found' });
       }
 
-      const result = await PM2Service.startInstance(profileId, profile.instanceName, profile.port);
+      const result = InstanceWorkerService.startWorker(profileId, profile.instanceName, profile.port);
 
       res.json(result);
     } catch (error) {
-      logger.error('Error starting PM2 instance:', error);
-      res.status(500).json({ error: 'Failed to start PM2 instance' });
+      logger.error('Error starting instance worker:', error);
+      res.status(500).json({ error: 'Failed to start instance worker' });
     }
   });
 
   /**
-   * Stop PM2 process for an instance
+   * Stop worker for an instance
    */
   app.post('/api/pm2/instance/:profileId/stop', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
       const profileId = parseInt(req.params.profileId);
-      const result = await PM2Service.stopInstance(profileId);
+      const result = InstanceWorkerService.stopWorker(profileId);
 
       res.json(result);
     } catch (error) {
-      logger.error('Error stopping PM2 instance:', error);
-      res.status(500).json({ error: 'Failed to stop PM2 instance' });
+      logger.error('Error stopping instance worker:', error);
+      res.status(500).json({ error: 'Failed to stop instance worker' });
     }
   });
 
   /**
-   * Restart PM2 process for an instance
+   * Restart worker for an instance
    */
   app.post('/api/pm2/instance/:profileId/restart', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
       const profileId = parseInt(req.params.profileId);
-      const result = await PM2Service.restartInstance(profileId);
+
+      // Get profile info for restart
+      const profile = profileManager.getProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      const result = InstanceWorkerService.restartWorker(profileId, profile.instanceName, profile.port);
 
       res.json(result);
     } catch (error) {
-      logger.error('Error restarting PM2 instance:', error);
-      res.status(500).json({ error: 'Failed to restart PM2 instance' });
+      logger.error('Error restarting instance worker:', error);
+      res.status(500).json({ error: 'Failed to restart instance worker' });
     }
   });
 
   /**
-   * Stop all PM2 instances
+   * Stop all instance workers
    */
   app.post('/api/pm2/instances/stop-all', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
-      const result = await PM2Service.stopAllInstances();
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
+      const result = InstanceWorkerService.stopAllWorkers();
 
       res.json(result);
     } catch (error) {
-      logger.error('Error stopping all PM2 instances:', error);
-      res.status(500).json({ error: 'Failed to stop all PM2 instances' });
+      logger.error('Error stopping all instance workers:', error);
+      res.status(500).json({ error: 'Failed to stop all instance workers' });
     }
   });
 
   /**
-   * Get PM2 system info
+   * Start workers for all profiles
+   * Creates a dedicated worker process for each profile to handle script execution independently
+   */
+  app.post('/api/pm2/spawn-all-workers', async (req: Request, res: Response) => {
+    try {
+      logger.info('[API] Starting workers for all profiles...');
+
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
+
+      // Get all profiles
+      const profiles = profileManager.getAllProfiles();
+
+      if (profiles.length === 0) {
+        return res.json({
+          success: true,
+          started: 0,
+          failed: 0,
+          skipped: 0,
+          message: 'No profiles found',
+          results: []
+        });
+      }
+
+      // Map profiles to required format
+      const profileData = profiles.map(p => ({
+        id: p.id,
+        instanceName: p.instanceName,
+        port: p.port
+      }));
+
+      // Start workers
+      const result = InstanceWorkerService.startAllWorkers(profileData);
+
+      logger.info(`[API] Start workers result: ${result.started} started, ${result.failed} failed, ${result.skipped} skipped`);
+
+      res.json({
+        ...result,
+        message: `Started ${result.started} workers, ${result.failed} failed, ${result.skipped} skipped`
+      });
+    } catch (error: any) {
+      logger.error('[API] Error starting all workers:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to start workers',
+        message: error.message || 'Unknown error'
+      });
+    }
+  });
+
+  /**
+   * Get instance worker system info
    */
   app.get('/api/pm2/system/info', async (req: Request, res: Response) => {
     try {
-      const { PM2Service } = await import('../services/PM2Service.js');
-      const info = await PM2Service.getSystemInfo();
+      const { InstanceWorkerService } = await import('../services/InstanceWorkerService.js');
+      const info = InstanceWorkerService.getSystemInfo();
+
+      // Disable caching to prevent 304 responses
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
 
       res.json({
         success: true,
         info
       });
     } catch (error) {
-      logger.error('Error getting PM2 system info:', error);
-      res.status(500).json({ error: 'Failed to get PM2 system info' });
+      logger.error('Error getting worker system info:', error);
+      res.status(500).json({ error: 'Failed to get worker system info' });
     }
   });
 }

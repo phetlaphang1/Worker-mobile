@@ -14,7 +14,7 @@ import DirectMobileScriptService from './services/DirectMobileScriptService.js';
 import UIInspectorService from './services/UIInspectorService.js';
 import DeviceMonitor from './services/DeviceMonitor.js';
 import FingerprintService from './services/FingerprintService.js';
-import PM2Service from './services/PM2Service.js';
+import InstanceWorkerService from './services/InstanceWorkerService.js';
 import { setupRoutes } from './routes/index.js';
 import { logger } from './utils/logger.js';
 import { initializeProxyManager } from './routes/proxy.js';
@@ -367,31 +367,34 @@ async function startServices() {
     await deviceMonitor.start();
     logger.info('✅ Device monitor started');
 
-    // Sync PM2 status with existing profiles
-    logger.info('🔄 Syncing PM2 status with profiles...');
+    // Initialize InstanceWorkerService and start workers for active profiles
+    logger.info('🔄 Initializing InstanceWorkerService...');
     try {
-      const pm2Instances = await PM2Service.getAllInstancesStatus();
-      logger.info(`✅ Found ${pm2Instances.length} PM2 instances running`);
+      InstanceWorkerService.initialize();
 
-      // Auto-start PM2 for active profiles if not already managed
+      // Auto-start workers for active profiles
       const profiles = profileManager.getAllProfiles();
       const activeProfiles = profiles.filter(p => p.status === 'active' || p.status === 'running');
 
-      for (const profile of activeProfiles) {
-        const existingPM2 = pm2Instances.find(pm2 => pm2.profileId === profile.id);
-        if (!existingPM2) {
-          logger.info(`🚀 Auto-starting PM2 for active profile ${profile.id} (${profile.name})`);
-          try {
-            await PM2Service.startInstance(profile.id, profile.instanceName, profile.port);
-          } catch (error) {
-            logger.warn(`Failed to start PM2 for profile ${profile.id}:`, error);
-          }
-        }
+      if (activeProfiles.length > 0) {
+        logger.info(`🚀 Auto-starting workers for ${activeProfiles.length} active profiles...`);
+        const profileData = activeProfiles.map(p => ({
+          id: p.id,
+          instanceName: p.instanceName,
+          port: p.port
+        }));
+
+        const result = InstanceWorkerService.startAllWorkers(profileData);
+        logger.info(
+          `✅ Workers started: ${result.started} started, ${result.failed} failed, ${result.skipped} skipped`
+        );
+      } else {
+        logger.info('No active profiles found, no workers started');
       }
 
-      logger.info('✅ PM2 sync completed');
+      logger.info('✅ InstanceWorkerService initialized');
     } catch (error) {
-      logger.warn('PM2 sync failed (PM2 may not be available):', error);
+      logger.warn('InstanceWorkerService initialization failed:', error);
     }
 
     // Initialize proxy manager from routes (for backward compatibility)
@@ -468,13 +471,13 @@ async function gracefulShutdown(signal: string) {
     });
     // logger.info(`Stopped ${stopResult.successCount} instances, ${stopResult.failCount} failed`);
 
-    // Step 4.5: Stop all PM2 instances (optional - keep them running if you want)
+    // Step 4.5: Stop all instance workers
     try {
-      logger.info('Stopping PM2 instances...');
-      await PM2Service.stopAllInstances();
-      logger.info('✅ PM2 instances stopped');
+      logger.info('Stopping all instance workers...');
+      const stopResult = InstanceWorkerService.stopAllWorkers();
+      logger.info(`✅ Instance workers stopped: ${stopResult.stopped} stopped`);
     } catch (error) {
-      logger.warn('Failed to stop PM2 instances:', error);
+      logger.warn('Failed to stop instance workers:', error);
     }
 
     // Step 5: Close server

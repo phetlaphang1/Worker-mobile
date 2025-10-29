@@ -351,11 +351,27 @@ export class DeviceMonitor {
     const process = this.logcatProcesses.get(instanceName);
     if (process) {
       try {
-        process.kill('SIGTERM');
+        // On Windows, use taskkill for more reliable process termination
+        if (process.pid) {
+          const { execSync } = await import('child_process');
+          try {
+            execSync(`taskkill /pid ${process.pid} /f /t`, { stdio: 'ignore' });
+          } catch (killError) {
+            // If taskkill fails, try regular kill
+            process.kill('SIGTERM');
+          }
+        } else {
+          process.kill('SIGTERM');
+        }
         this.logcatProcesses.delete(instanceName);
         logger.info(`[DeviceMonitor] Stopped logcat for ${instanceName}`);
-      } catch (error) {
-        logger.error(`[DeviceMonitor] Failed to stop logcat for ${instanceName}:`, error);
+      } catch (error: any) {
+        // Ignore EPERM errors during shutdown - process might already be dead
+        if (error.code !== 'EPERM' && error.errno !== -4048) {
+          logger.error(`[DeviceMonitor] Failed to stop logcat for ${instanceName}:`, error);
+        }
+        // Still remove from map even if kill failed
+        this.logcatProcesses.delete(instanceName);
       }
     }
   }
