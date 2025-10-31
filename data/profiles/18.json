@@ -1,0 +1,41 @@
+{
+  "id": 18,
+  "name": "11",
+  "instanceName": "11_18",
+  "port": 5593,
+  "settings": {
+    "resolution": "1080,2400",
+    "cpu": 2,
+    "memory": 2048
+  },
+  "device": {
+    "imei": "600486856509869",
+    "androidId": "ce816041c5203be5",
+    "model": "CPH2269",
+    "manufacturer": "OPPO",
+    "brand": "OPPO",
+    "resolution": "1080x2400",
+    "dpi": 450
+  },
+  "network": {
+    "useProxy": false
+  },
+  "apps": {
+    "twitter": {
+      "installed": true,
+      "packageName": "com.twitter.android"
+    }
+  },
+  "status": "inactive",
+  "createdAt": "2025-10-29T08:33:51.986Z",
+  "metadata": {
+    "accounts": {
+      "x": {
+        "username": "JenkinsFlo5977",
+        "password": "Lamgiau00kh0@37"
+      }
+    },
+    "executionHistory": []
+  },
+  "lastUsed": "2025-10-30T04:16:34.267Z"
+}

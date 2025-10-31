@@ -1,61 +1,63 @@
 /**
  * PM2 System Monitor
- * Shows overall PM2 status and system info
+ * Shows detailed worker status for all instances
  */
 
 import { useState, useEffect } from 'react';
-import { Activity, Server, Cpu, HardDrive, Power } from 'lucide-react';
+import { Activity, Server, RefreshCw, Power } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { API_BASE_URL } from '@/config/api.config';
 
-interface PM2SystemInfo {
-  totalWorkers: number;
-  runningWorkers: number;
-  crashedWorkers: number;
+interface WorkerStatus {
+  profileId: number;
+  instanceName: string;
+  status: string;
+  pid: number;
+  uptime: number;
+  restarts: number;
 }
 
 export function PM2Monitor() {
-  const [systemInfo, setSystemInfo] = useState<PM2SystemInfo | null>(null);
+  const [workers, setWorkers] = useState<WorkerStatus[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast();
 
-  // Fetch system info
-  const fetchSystemInfo = async () => {
+  // Fetch all workers status
+  const fetchWorkers = async () => {
     try {
-      console.log('[PM2Monitor] Fetching system info...');
-      const response = await fetch(`${API_BASE_URL}/api/pm2/system/info`);
+      console.log('[PM2Monitor] Fetching workers status...');
+      const response = await fetch(`${API_BASE_URL}/api/pm2/instances/status`);
       const data = await response.json();
-      console.log('[PM2Monitor] System info response:', data);
+      console.log('[PM2Monitor] Workers response:', data);
 
       if (data.success) {
-        setSystemInfo(data.info);
-        setHasFetched(true);
-        console.log('[PM2Monitor] System info:', {
-          total: data.info.totalWorkers,
-          running: data.info.runningWorkers,
-          crashed: data.info.crashedWorkers
-        });
+        setWorkers(data.instances || []);
+        console.log('[PM2Monitor] Found', data.instances?.length || 0, 'workers');
       }
     } catch (error) {
-      console.error('[PM2Monitor] Failed to fetch system info:', error);
-      setHasFetched(true);
+      console.error('[PM2Monitor] Failed to fetch workers:', error);
     }
   };
 
-  // ONLY fetch ONCE on mount - NO POLLING
-  // PM2 status doesn't change frequently enough to warrant constant polling
-  // User can manually refresh page if needed
+  // Refresh workers
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchWorkers();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // Fetch on mount
   useEffect(() => {
-    fetchSystemInfo();
+    fetchWorkers();
   }, []);
 
-  // Stop all instances
+  // Stop all workers
   const handleStopAll = async () => {
-    if (!confirm('Are you sure you want to stop all worker instances?')) {
+    if (!confirm(`Are you sure you want to stop all ${workers.length} worker(s)?`)) {
       return;
     }
 
@@ -71,10 +73,10 @@ export function PM2Monitor() {
       if (data.success) {
         toast({
           title: 'All Workers Stopped',
-          description: data.message,
+          description: `Stopped ${data.stopped} worker(s)`,
         });
         console.log(`[PM2Monitor] ✅ Stopped ${data.stopped} workers`);
-        fetchSystemInfo();
+        await fetchWorkers();
       } else {
         console.error('[PM2Monitor] ❌ Failed to stop all workers:', data.message);
         toast({
@@ -95,68 +97,106 @@ export function PM2Monitor() {
     }
   };
 
-  if (!systemInfo) {
-    return null;
-  }
+  // Format uptime
+  const formatUptime = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  };
+
+  // Get status badge variant
+  const getStatusVariant = (status: string) => {
+    if (status === 'running') return 'default';
+    if (status === 'stopped') return 'secondary';
+    return 'destructive';
+  };
 
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Server className="w-5 h-5" />
+          <Activity className="w-5 h-5" />
           <h3 className="font-semibold">Instance Workers Monitor</h3>
+          <Badge variant="secondary" className="ml-2">
+            {workers.length} Active
+          </Badge>
         </div>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={handleStopAll}
-          disabled={isLoading || systemInfo.totalWorkers === 0}
-        >
-          <Power className="w-4 h-4 mr-1" />
-          Stop All
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        {/* Total Workers */}
-        <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-          <Activity className="w-8 h-8 text-blue-500" />
-          <div>
-            <div className="text-2xl font-bold">{systemInfo.totalWorkers}</div>
-            <div className="text-xs text-muted-foreground">Total Workers</div>
-          </div>
-        </div>
-
-        {/* Running Workers */}
-        <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-          <Server className="w-8 h-8 text-green-500" />
-          <div>
-            <div className="text-2xl font-bold text-green-500">{systemInfo.runningWorkers}</div>
-            <div className="text-xs text-muted-foreground">Running</div>
-          </div>
-        </div>
-
-        {/* Crashed Workers */}
-        <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-          <Activity className="w-8 h-8 text-red-500" />
-          <div>
-            <div className="text-2xl font-bold text-red-500">{systemInfo.crashedWorkers}</div>
-            <div className="text-xs text-muted-foreground">Crashed</div>
-          </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`w-4 h-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleStopAll}
+            disabled={isLoading || workers.length === 0}
+          >
+            <Power className="w-4 h-4 mr-1" />
+            Stop All
+          </Button>
         </div>
       </div>
 
-      {/* Status Summary */}
-      <div className="mt-4 flex items-center gap-2 text-sm">
-        <Badge variant={systemInfo.runningWorkers > 0 ? "default" : "secondary"}>
-          {systemInfo.runningWorkers > 0 ? 'Workers Active' : 'No Active Workers'}
-        </Badge>
-        {systemInfo.runningWorkers > 0 && (
-          <span className="text-muted-foreground">
-            {systemInfo.runningWorkers}/{systemInfo.totalWorkers} workers running
-          </span>
-        )}
-      </div>
+      {workers.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <Server className="w-12 h-12 mx-auto mb-2 opacity-20" />
+          <p>No active workers</p>
+          <p className="text-sm">Start instances to see workers here</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b text-left text-sm text-muted-foreground">
+                <th className="pb-2 font-medium">Instance</th>
+                <th className="pb-2 font-medium">Status</th>
+                <th className="pb-2 font-medium">PID</th>
+                <th className="pb-2 font-medium">Uptime</th>
+                <th className="pb-2 font-medium">Restarts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workers.map((worker) => (
+                <tr key={worker.profileId} className="border-b last:border-0">
+                  <td className="py-3">
+                    <div className="flex items-center gap-2">
+                      <Server className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <div className="font-medium">{worker.instanceName}</div>
+                        <div className="text-xs text-muted-foreground">ID: {worker.profileId}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3">
+                    <Badge variant={getStatusVariant(worker.status)}>
+                      {worker.status}
+                    </Badge>
+                  </td>
+                  <td className="py-3 text-sm font-mono">{worker.pid}</td>
+                  <td className="py-3 text-sm">{formatUptime(worker.uptime)}</td>
+                  <td className="py-3 text-sm">
+                    <span className={worker.restarts > 0 ? 'text-yellow-600 font-medium' : ''}>
+                      {worker.restarts}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }

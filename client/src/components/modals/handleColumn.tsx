@@ -55,7 +55,9 @@ export const HandleColumn: React.FC<HandleColumnProps> = ({
   disableDuplicate = false,
   disableDelete = false,
 }) => {
-  const isRunning = entity?.status === 'active';
+  // Check actual device status instead of just profile status
+  // This prevents UI from being disabled when profile.status is 'active' but device is not actually running
+  const isRunning = (entity as any)?.deviceStatus?.isRunning && (entity as any)?.deviceStatus?.isAdbConnected;
   
   return (
     <div className="flex items-center space-x-1">

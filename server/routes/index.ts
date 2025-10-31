@@ -211,6 +211,15 @@ export function setupRoutes(app: Express, services: RouteServices) {
         }
       }
 
+      // Refresh all profile statuses to ensure UI shows accurate state
+      try {
+        await profileManager.refreshAllProfileStatuses();
+        logger.info('Profile statuses refreshed after profile creation');
+      } catch (refreshError) {
+        logger.warn('Failed to refresh profile statuses after creation:', refreshError);
+        // Don't fail the request if refresh fails
+      }
+
       res.json({ success: true, profile });
     } catch (error) {
       logger.error('Error creating profile:', error);
@@ -310,6 +319,16 @@ export function setupRoutes(app: Express, services: RouteServices) {
           logger.error(`Error starting worker for cloned profile "${clonedProfile.name}":`, workerError);
           // Don't fail the request if worker fails to start
         }
+      }
+
+      // Refresh all profile statuses to ensure UI shows accurate state
+      // (Clone operation may restart source instance, causing status to become stale)
+      try {
+        await profileManager.refreshAllProfileStatuses();
+        logger.info('Profile statuses refreshed after clone operation');
+      } catch (refreshError) {
+        logger.warn('Failed to refresh profile statuses after clone:', refreshError);
+        // Don't fail the request if refresh fails
       }
 
       res.json({

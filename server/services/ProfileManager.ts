@@ -183,7 +183,6 @@ export class ProfileManager {
       // This prevents naming conflicts when multiple instances have similar names
       const baseName = displayName.replace(/[^a-zA-Z0-9-_]/g, '_');
       const instanceName = `${baseName}_${profileId}`;
-      const port = 5555 + this.profiles.size * 2;
 
       // Default settings
       const defaultSettings = {
@@ -194,12 +193,20 @@ export class ProfileManager {
         androidVersion: '9'
       };
 
-      // Create profile object
+      // Create LDPlayer instance first to get actual port
+      const instance = await this.controller.createInstance(instanceName, {
+        resolution: config.settings?.resolution || defaultSettings.resolution,
+        dpi: config.settings?.dpi || defaultSettings.dpi,
+        cpu: config.settings?.cpu || defaultSettings.cpu,
+        memory: config.settings?.memory || defaultSettings.memory
+      });
+
+      // Create profile object with actual port from LDPlayer
       const profile: MobileProfile = {
         id: profileId,
         name: displayName, // Use provided name
         instanceName,
-        port,
+        port: instance.port, // Use actual port from created instance
         settings: { ...defaultSettings, ...config.settings },
         device: config.device || {},
         network: { useProxy: false, ...config.network },
@@ -209,13 +216,7 @@ export class ProfileManager {
         createdAt: new Date()
       };
 
-      // Create LDPlayer instance
-      await this.controller.createInstance(instanceName, {
-        resolution: profile.settings.resolution,
-        dpi: profile.settings.dpi,
-        cpu: profile.settings.cpu,
-        memory: profile.settings.memory
-      });
+      logger.info(`Instance created with actual port: ${instance.port} (index: ${instance.index})`);
 
       // Auto-apply fingerprint if enabled (default: true)
       const shouldApplyFingerprint = config.autoApplyFingerprint !== false;
@@ -942,8 +943,7 @@ export class ProfileManager {
         result.split('\n')
           .map(line => line.trim())
           .filter(line => line && line !== '')
-          .map(line => line.split(',')[1]) // Get instance name
-          .filter(name => name)
+          // Note: runninglist returns plain instance names, one per line (no commas)
       );
 
       // Update all profiles based on running status
@@ -1202,15 +1202,18 @@ export class ProfileManager {
     // Generate new ID to avoid conflicts
     importedProfile.id = this.generateProfileId();
     importedProfile.instanceName = `Profile_${importedProfile.id}`;
-    importedProfile.port = 5555 + this.profiles.size * 2;
 
-    // Create instance
-    await this.controller.createInstance(importedProfile.instanceName, {
+    // Create instance and get actual port from LDPlayer
+    const instance = await this.controller.createInstance(importedProfile.instanceName, {
       resolution: importedProfile.settings.resolution,
       dpi: importedProfile.settings.dpi,
       cpu: importedProfile.settings.cpu,
       memory: importedProfile.settings.memory
     });
+
+    // Use actual port from created instance (not guessed from profiles.size)
+    importedProfile.port = instance.port;
+    logger.info(`Instance created with actual port: ${instance.port} (index: ${instance.index})`);
 
     // Save profile
     this.profiles.set(importedProfile.id, importedProfile);
@@ -1234,8 +1237,18 @@ export class ProfileManager {
       // Check if Twitter APK exists
       const apkPath = process.env.TWITTER_APK_PATH || './apks/twitter.apk';
 
+      // IMPORTANT: Always resolve actual port before installing (instance may have restarted)
+      logger.info(`Resolving actual ADB port for instance: ${profile.instanceName}`);
+      const actualPort = await this.controller.getAdbPortForInstance(profile.instanceName);
+
+      if (actualPort !== profile.port) {
+        logger.warn(`Port changed from ${profile.port} to ${actualPort}, updating profile...`);
+        profile.port = actualPort;
+        await this.saveProfile(profile);
+      }
+
       logger.info(`Installing Twitter APK from: ${apkPath}`);
-      await this.controller.installAPK(profile.port, apkPath);
+      await this.controller.installAPK(actualPort, apkPath);
 
       // Update profile
       profile.apps.twitter = {
@@ -1260,10 +1273,20 @@ export class ProfileManager {
       throw new Error(`Profile ${profileId} not found`);
     }
 
+    // IMPORTANT: Resolve actual port once before installing apps
+    logger.info(`Resolving actual ADB port for instance: ${profile.instanceName}`);
+    const actualPort = await this.controller.getAdbPortForInstance(profile.instanceName);
+
+    if (actualPort !== profile.port) {
+      logger.warn(`Port changed from ${profile.port} to ${actualPort}, updating profile...`);
+      profile.port = actualPort;
+      await this.saveProfile(profile);
+    }
+
     for (const app of apps) {
       try {
         logger.info(`Installing ${app.name} on profile: ${profile.name}`);
-        await this.controller.installAPK(profile.port, app.apkPath);
+        await this.controller.installAPK(actualPort, app.apkPath);
 
         profile.apps[app.name.toLowerCase()] = {
           installed: true,
@@ -1303,11 +1326,21 @@ export class ProfileManager {
 
     logger.info(`Auto-installing ${appsToInstall.length} apps on profile: ${profile.name}`);
 
+    // IMPORTANT: Resolve actual port once before checking/installing apps
+    logger.info(`Resolving actual ADB port for instance: ${profile.instanceName}`);
+    const actualPort = await this.controller.getAdbPortForInstance(profile.instanceName);
+
+    if (actualPort !== profile.port) {
+      logger.warn(`Port changed from ${profile.port} to ${actualPort}, updating profile...`);
+      profile.port = actualPort;
+      await this.saveProfile(profile);
+    }
+
     for (const appConfig of appsToInstall) {
       try {
         // Check if app already installed
         const isInstalled = await this.controller.isAppInstalled(
-          profile.port,
+          actualPort,
           appConfig.packageName
         );
 
@@ -1362,6 +1395,16 @@ export class ProfileManager {
     const profile = this.profiles.get(profileId);
     if (!profile) return;
 
+    // IMPORTANT: Resolve actual port once before checking/installing apps
+    logger.info(`Resolving actual ADB port for instance: ${profile.instanceName}`);
+    const actualPort = await this.controller.getAdbPortForInstance(profile.instanceName);
+
+    if (actualPort !== profile.port) {
+      logger.warn(`Port changed from ${profile.port} to ${actualPort}, updating profile...`);
+      profile.port = actualPort;
+      await this.saveProfile(profile);
+    }
+
     const { scanAvailableApps } = await import('../utils/scanApks.js');
     const availableApps = await scanAvailableApps();
 
@@ -1375,7 +1418,7 @@ export class ProfileManager {
       try {
         // Check if app already installed
         const isInstalled = await this.controller.isAppInstalled(
-          profile.port,
+          actualPort,
           appInfo.packageName || ''
         );
 

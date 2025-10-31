@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "description": "Mobile automation worker for LDPlayer Android emulator",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "scripts": {
+    "verify": "node verify-deployment.js",
+    "prepare-deploy": "npm run build && node verify-deployment.js",
     "dev": "concurrently --kill-others-on-fail -n \"SERVER,CLIENT\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:with-pm2": "npm run build:server && pm2 delete all 2>nul & concurrently --kill-others-on-fail -n \"SERVER,CLIENT\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "nodemon --watch server --ext ts,js --exec tsx server/index.ts",

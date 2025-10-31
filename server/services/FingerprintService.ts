@@ -172,7 +172,41 @@ export class FingerprintService {
         await this.execADBShell(port, `setprop ro.sf.lcd_density ${fp.realDpi}`);
       }
 
-      logger.info(`[ADB] ✅ Fingerprint applied via ADB`);
+      // Apply sensor data (NEW - enhanced antidetect)
+      if (fp.sensors) {
+        logger.info(`[ADB] Applying sensor data (accelerometer, gyroscope, magnetometer)...`);
+
+        // Accelerometer
+        await this.execADBShell(port, `setprop sys.sensors.accel_x ${fp.sensors.accelerometer.x}`);
+        await this.execADBShell(port, `setprop sys.sensors.accel_y ${fp.sensors.accelerometer.y}`);
+        await this.execADBShell(port, `setprop sys.sensors.accel_z ${fp.sensors.accelerometer.z}`);
+
+        // Gyroscope
+        await this.execADBShell(port, `setprop sys.sensors.gyro_alpha ${fp.sensors.gyroscope.alpha}`);
+        await this.execADBShell(port, `setprop sys.sensors.gyro_beta ${fp.sensors.gyroscope.beta}`);
+        await this.execADBShell(port, `setprop sys.sensors.gyro_gamma ${fp.sensors.gyroscope.gamma}`);
+
+        // Magnetometer
+        await this.execADBShell(port, `setprop sys.sensors.mag_x ${fp.sensors.magnetometer.x}`);
+        await this.execADBShell(port, `setprop sys.sensors.mag_y ${fp.sensors.magnetometer.y}`);
+        await this.execADBShell(port, `setprop sys.sensors.mag_z ${fp.sensors.magnetometer.z}`);
+      }
+
+      // Apply battery data (NEW - enhanced antidetect)
+      if (fp.battery) {
+        logger.info(`[ADB] Applying battery data (level, charging, temperature)...`);
+
+        await this.execADBShell(port, `setprop sys.battery.level ${fp.battery.level}`);
+        await this.execADBShell(port, `setprop sys.battery.charging ${fp.battery.isCharging ? '1' : '0'}`);
+        if (fp.battery.chargingType) {
+          await this.execADBShell(port, `setprop sys.battery.charging_type ${fp.battery.chargingType}`);
+        }
+        await this.execADBShell(port, `setprop sys.battery.temperature ${Math.round(fp.battery.temperature * 10)}`); // In 0.1°C units
+        await this.execADBShell(port, `setprop sys.battery.health ${fp.battery.health}`);
+        await this.execADBShell(port, `setprop sys.battery.voltage ${fp.battery.voltage}`);
+      }
+
+      logger.info(`[ADB] ✅ Fingerprint applied via ADB (including sensors & battery)`);
 
     } catch (error) {
       logger.error(`[ADB] Failed to apply fingerprint:`, error);
